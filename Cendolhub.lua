@@ -1,29 +1,40 @@
--- CENDOL HUB - FULL CONTROL GUI
--- ESP | Auto Lock | Distance Slider | Android
+-- CENDOL HUB - BODY LOCK PLAYER + NPC
+-- Lock 1 target (player/npc) | Body follow | Skill auto aim
+-- Ganti target: matiin lalu idupin
 -- By: milanlan0073-alt
 
 loadstring([[
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
 -- ========== SETTINGS ==========
 local Settings = {
-    AutoLock = true,      -- Auto lock ON/OFF
-    ShowESP = true,       -- ESP ON/OFF
-    MaxDistance = 150,
-    Smoothness = 0.4
+    Enabled = true,           
+    LockPlayer = true,        -- LOCK PLAYER ON/OFF
+    LockNPC = true,           -- LOCK NPC ON/OFF
+    BodyFollow = true,        
+    BodyFollowSpeed = 0.3,    
+    Smoothness = 0.4,         
+    MaxDistance = 150         
 }
 
 local CurrentTarget = nil
 local TargetPart = nil
-local ESPObjects = {}
-local MenuOpen = true
+local TargetHumanoid = nil
 
 -- HITBOXES
 local Hitboxes = {"Head", "UpperTorso", "HumanoidRootPart", "Torso"}
+
+-- NPC DETECTION KEYWORDS
+local NPCKeywords = {
+    "Cursed", "Spirit", "Curse", "NPC", "Mob", "Enemy", "Boss",
+    "Raid", "Demon", "Shadow", "Monster", "Training", "Dummy",
+    "Villain", "Fodder", "Minion", "Creep", "Zombie"
+}
 
 -- UTILITIES
 local function IsAlive(c)
@@ -32,39 +43,87 @@ local function IsAlive(c)
     return h and h.Health > 0
 end
 
+local function IsNPC(character)
+    -- Cek kalo bukan player
+    if Players:GetPlayerFromCharacter(character) then
+        return false
+    end
+    -- Cek nama character
+    local name = character.Name:lower()
+    for _, keyword in ipairs(NPCKeywords) do
+        if name:find(keyword:lower()) then
+            return true
+        end
+    end
+    -- Kalo ada Humanoid tapi bukan player, anggap NPC
+    if character:FindFirstChild("Humanoid") then
+        return true
+    end
+    return false
+end
+
 local function GetDistance(a, b)
     return (a.Position - b.Position).Magnitude
 end
 
--- GET TARGET TERDEKAT
+-- GET TARGET TERDEKAT (PLAYER + NPC)
 local function GetClosestTarget()
     local closest = nil
     local closestDist = Settings.MaxDistance
+    local closestType = nil
     local myChar = LocalPlayer.Character
-    if not myChar then return nil end
+    if not myChar then return nil, nil end
     local myPos = myChar:FindFirstChild("HumanoidRootPart")
-    if not myPos then return nil end
+    if not myPos then return nil, nil end
     
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local c = p.Character
-            if c and IsAlive(c) then
-                local r = c:FindFirstChild("HumanoidRootPart")
-                if r then
-                    local d = GetDistance(r, myPos)
-                    if d < closestDist then
-                        closestDist = d
-                        closest = c
+    -- PLAYERS
+    if Settings.LockPlayer then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                local c = p.Character
+                if c and IsAlive(c) then
+                    local r = c:FindFirstChild("HumanoidRootPart")
+                    if r then
+                        local d = GetDistance(r, myPos)
+                        if d < closestDist then
+                            closestDist = d
+                            closest = c
+                            closestType = "PLAYER"
+                        end
                     end
                 end
             end
         end
     end
-    return closest
+    
+    -- NPC
+    if Settings.LockNPC then
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("Model") and obj ~= myChar then
+                if IsNPC(obj) then
+                    local h = obj:FindFirstChild("Humanoid")
+                    local r = obj:FindFirstChild("HumanoidRootPart")
+                    if h and r and h.Health > 0 then
+                        local d = GetDistance(r, myPos)
+                        if d < closestDist then
+                            closestDist = d
+                            closest = obj
+                            closestType = "NPC"
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return closest, closestType
 end
 
 -- DAPATIN HITBOX TERBAIK
 local function GetBestHitbox(char)
+    local head = char:FindFirstChild("Head")
+    if head and head:IsA("BasePart") then return head end
+    
     for _, h in ipairs(Hitboxes) do
         local part = char:FindFirstChild(h)
         if part and part:IsA("BasePart") then return part end
@@ -72,71 +131,37 @@ local function GetBestHitbox(char)
     return char:FindFirstChild("HumanoidRootPart")
 end
 
--- ========== ESP ==========
-local function CreateESP(target)
-    if not Settings.ShowESP then return end
-    if ESPObjects[target] then 
-        pcall(function() ESPObjects[target]:Destroy() end) 
+-- BODY LOCK - Karakter ngikutin target
+local function BodyFollowTarget()
+    if not Settings.BodyFollow then return end
+    if not CurrentTarget or not IsAlive(CurrentTarget) then return end
+    
+    local myChar = LocalPlayer.Character
+    local targetRoot = CurrentTarget:FindFirstChild("HumanoidRootPart")
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    
+    if not targetRoot or not myRoot then return end
+    
+    local distance = GetDistance(targetRoot, myRoot)
+    
+    -- Kalo terlalu jauh, gerakin karakter ke target
+    if distance > 8 then
+        local direction = (targetRoot.Position - myRoot.Position).Unit
+        local moveDirection = direction * Settings.BodyFollowSpeed
+        local newPos = myRoot.Position + moveDirection
+        
+        local tweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Linear)
+        local tween = TweenService:Create(myRoot, tweenInfo, {Position = newPos})
+        tween:Play()
     end
     
-    local root = target:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "CendolESP"
-    billboard.Size = UDim2.new(0, 90, 0, 35)
-    billboard.StudsOffset = Vector3.new(0, 2.5, 0)
-    billboard.AlwaysOnTop = true
-    billboard.Adornee = root
-    
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-    frame.BackgroundTransparency = 0.5
-    
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 0.6, 0)
-    label.Position = UDim2.new(0, 0, 0, 0)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    label.TextScaled = true
-    label.Font = Enum.Font.GothamBold
-    label.Text = target.Name or "?"
-    
-    local healthBar = Instance.new("Frame")
-    healthBar.Size = UDim2.new(1, 0, 0.25, 0)
-    healthBar.Position = UDim2.new(0, 0, 0.7, 0)
-    healthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-    healthBar.BackgroundTransparency = 0.3
-    
-    label.Parent = frame
-    healthBar.Parent = frame
-    frame.Parent = billboard
-    billboard.Parent = root
-    ESPObjects[target] = billboard
-    
-    -- Update health bar
-    local function updateHealth()
-        while billboard and billboard.Parent and IsAlive(target) do
-            local hpPercent = target.Humanoid.Health / target.Humanoid.MaxHealth
-            healthBar.Size = UDim2.new(hpPercent, 0, 0.25, 0)
-            healthBar.BackgroundColor3 = Color3.fromRGB(255 * (1 - hpPercent), 255 * hpPercent, 0)
-            task.wait(0.2)
-        end
-    end
-    spawn(updateHealth)
+    -- Auto arahin karakter ke target (biar skill kena)
+    local lookAt = CFrame.new(myRoot.Position, targetRoot.Position)
+    myChar:SetPrimaryPartCFrame(lookAt)
 end
 
-local function ClearESP()
-    for _, esp in pairs(ESPObjects) do
-        pcall(function() esp:Destroy() end)
-    end
-    ESPObjects = {}
-end
-
--- ========== GUI ==========
+-- SIMPLE GUI
 local function CreateGUI()
-    -- Tunggu PlayerGui
     for i = 1, 10 do
         if LocalPlayer:FindFirstChild("PlayerGui") then
             break
@@ -149,23 +174,22 @@ local function CreateGUI()
     sg.Parent = LocalPlayer.PlayerGui
     sg.ResetOnSpawn = false
     
-    -- MAIN FRAME
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 240, 0, 260)
+    frame.Size = UDim2.new(0, 240, 0, 200)
     frame.Position = UDim2.new(0, 10, 0, 80)
     frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    frame.BackgroundTransparency = 0.2
+    frame.BackgroundTransparency = 0.3
     frame.BorderSizePixel = 0
     
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = frame
     
-    -- TITLE (bisa drag)
+    -- Title (draggable)
     local titleBar = Instance.new("Frame")
-    titleBar.Size = UDim2.new(1, 0, 0, 40)
+    titleBar.Size = UDim2.new(1, 0, 0, 35)
     titleBar.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-    titleBar.BackgroundTransparency = 0.3
+    titleBar.BackgroundTransparency = 0.4
     titleBar.BorderSizePixel = 0
     
     local titleCorner = Instance.new("UICorner")
@@ -181,214 +205,167 @@ local function CreateGUI()
     title.Font = Enum.Font.GothamBold
     title.Parent = titleBar
     
-    -- CONTENT
+    -- Content
     local content = Instance.new("Frame")
-    content.Size = UDim2.new(1, 0, 1, -40)
-    content.Position = UDim2.new(0, 0, 0, 40)
+    content.Size = UDim2.new(1, 0, 1, -35)
+    content.Position = UDim2.new(0, 0, 0, 35)
     content.BackgroundTransparency = 1
     
-    -- AUTO LOCK TOGGLE
+    -- Lock ON/OFF Button (utama)
     local lockBtn = Instance.new("TextButton")
-    lockBtn.Size = UDim2.new(0.9, 0, 0, 45)
+    lockBtn.Size = UDim2.new(0.9, 0, 0, 40)
     lockBtn.Position = UDim2.new(0.05, 0, 0.05, 0)
-    lockBtn.BackgroundColor3 = Settings.AutoLock and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(100, 50, 50)
-    lockBtn.Text = Settings.AutoLock and "🔒 AUTO LOCK: ON" or "🔓 AUTO LOCK: OFF"
+    lockBtn.BackgroundColor3 = Settings.Enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 50, 50)
+    lockBtn.Text = Settings.Enabled and "🔒 LOCK ACTIVE" or "🔓 LOCK OFF"
     lockBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     lockBtn.TextScaled = true
     lockBtn.Font = Enum.Font.GothamBold
     lockBtn.BorderSizePixel = 0
     
-    local lockCorner = Instance.new("UICorner")
-    lockCorner.CornerRadius = UDim.new(0, 8)
-    lockCorner.Parent = lockBtn
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 8)
+    btnCorner.Parent = lockBtn
     
     lockBtn.MouseButton1Click:Connect(function()
-        Settings.AutoLock = not Settings.AutoLock
-        lockBtn.Text = Settings.AutoLock and "🔒 AUTO LOCK: ON" or "🔓 AUTO LOCK: OFF"
-        lockBtn.BackgroundColor3 = Settings.AutoLock and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(100, 50, 50)
-        if not Settings.AutoLock then
+        Settings.Enabled = not Settings.Enabled
+        lockBtn.Text = Settings.Enabled and "🔒 LOCK ACTIVE" or "🔓 LOCK OFF"
+        lockBtn.BackgroundColor3 = Settings.Enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 50, 50)
+        
+        if not Settings.Enabled then
             CurrentTarget = nil
             TargetPart = nil
+        else
+            CurrentTarget = nil -- reset target biar cari baru
+        end
+        
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "CENDOL HUB",
+            Text = Settings.Enabled and "LOCK ACTIVE" or "LOCK OFF",
+            Duration = 1
+        })
+    end)
+    
+    -- Lock Player Toggle
+    local playerBtn = Instance.new("TextButton")
+    playerBtn.Size = UDim2.new(0.43, 0, 0, 30)
+    playerBtn.Position = UDim2.new(0.05, 0, 0.28, 0)
+    playerBtn.BackgroundColor3 = Settings.LockPlayer and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
+    playerBtn.Text = Settings.LockPlayer and "👤 PLAYER" or "👤 PLAYER"
+    playerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    playerBtn.TextScaled = true
+    playerBtn.Font = Enum.Font.GothamBold
+    playerBtn.BorderSizePixel = 0
+    
+    local playerCorner = Instance.new("UICorner")
+    playerCorner.CornerRadius = UDim.new(0, 8)
+    playerCorner.Parent = playerBtn
+    
+    playerBtn.MouseButton1Click:Connect(function()
+        Settings.LockPlayer = not Settings.LockPlayer
+        playerBtn.BackgroundColor3 = Settings.LockPlayer and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
+        if Settings.Enabled then
+            CurrentTarget = nil -- reset target
         end
     end)
     
-    -- ESP TOGGLE
-    local espBtn = Instance.new("TextButton")
-    espBtn.Size = UDim2.new(0.9, 0, 0, 45)
-    espBtn.Position = UDim2.new(0.05, 0, 0.22, 0)
-    espBtn.BackgroundColor3 = Settings.ShowESP and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(100, 50, 50)
-    espBtn.Text = Settings.ShowESP and "👁️ ESP: ON" or "👁️ ESP: OFF"
-    espBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    espBtn.TextScaled = true
-    espBtn.Font = Enum.Font.GothamBold
-    espBtn.BorderSizePixel = 0
+    -- Lock NPC Toggle
+    local npcBtn = Instance.new("TextButton")
+    npcBtn.Size = UDim2.new(0.43, 0, 0, 30)
+    npcBtn.Position = UDim2.new(0.52, 0, 0.28, 0)
+    npcBtn.BackgroundColor3 = Settings.LockNPC and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
+    npcBtn.Text = Settings.LockNPC and "👹 NPC" or "👹 NPC"
+    npcBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    npcBtn.TextScaled = true
+    npcBtn.Font = Enum.Font.GothamBold
+    npcBtn.BorderSizePixel = 0
     
-    local espCorner = Instance.new("UICorner")
-    espCorner.CornerRadius = UDim.new(0, 8)
-    espCorner.Parent = espBtn
+    local npcCorner = Instance.new("UICorner")
+    npcCorner.CornerRadius = UDim.new(0, 8)
+    npcCorner.Parent = npcBtn
     
-    espBtn.MouseButton1Click:Connect(function()
-        Settings.ShowESP = not Settings.ShowESP
-        espBtn.Text = Settings.ShowESP and "👁️ ESP: ON" or "👁️ ESP: OFF"
-        espBtn.BackgroundColor3 = Settings.ShowESP and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(100, 50, 50)
-        if not Settings.ShowESP then
-            ClearESP()
+    npcBtn.MouseButton1Click:Connect(function()
+        Settings.LockNPC = not Settings.LockNPC
+        npcBtn.BackgroundColor3 = Settings.LockNPC and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
+        if Settings.Enabled then
+            CurrentTarget = nil -- reset target
         end
     end)
     
-    -- DISTANCE SLIDER
+    -- Target Info
+    local targetLabel = Instance.new("TextLabel")
+    targetLabel.Size = UDim2.new(0.9, 0, 0, 35)
+    targetLabel.Position = UDim2.new(0.05, 0, 0.45, 0)
+    targetLabel.Text = "🎯 No Target"
+    targetLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+    targetLabel.BackgroundTransparency = 1
+    targetLabel.TextScaled = true
+    targetLabel.Font = Enum.Font.Gotham
+    targetLabel.Parent = content
+    
+    -- Distance Info
     local distLabel = Instance.new("TextLabel")
     distLabel.Size = UDim2.new(0.9, 0, 0, 25)
-    distLabel.Position = UDim2.new(0.05, 0, 0.39, 0)
-    distLabel.Text = "📏 DISTANCE: " .. Settings.MaxDistance .. "m"
-    distLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    distLabel.Position = UDim2.new(0.05, 0, 0.65, 0)
+    distLabel.Text = "📏 --m"
+    distLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
     distLabel.BackgroundTransparency = 1
     distLabel.TextScaled = true
     distLabel.Font = Enum.Font.Gotham
     distLabel.Parent = content
     
-    local sliderBg = Instance.new("Frame")
-    sliderBg.Size = UDim2.new(0.9, 0, 0, 8)
-    sliderBg.Position = UDim2.new(0.05, 0, 0.48, 0)
-    sliderBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    sliderBg.BorderSizePixel = 0
+    -- Type Info
+    local typeLabel = Instance.new("TextLabel")
+    typeLabel.Size = UDim2.new(0.9, 0, 0, 25)
+    typeLabel.Position = UDim2.new(0.05, 0, 0.8, 0)
+    typeLabel.Text = ""
+    typeLabel.TextColor3 = Color3.fromRGB(150, 150, 255)
+    typeLabel.BackgroundTransparency = 1
+    typeLabel.TextScaled = true
+    typeLabel.Font = Enum.Font.Gotham
+    typeLabel.Parent = content
     
-    local sliderFill = Instance.new("Frame")
-    sliderFill.Size = UDim2.new(Settings.MaxDistance / 300, 0, 1, 0)
-    sliderFill.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-    sliderFill.BorderSizePixel = 0
-    
-    local sliderBtn = Instance.new("TextButton")
-    sliderBtn.Size = UDim2.new(0, 20, 0, 20)
-    sliderBtn.Position = UDim2.new(Settings.MaxDistance / 300, -0.04, -0.75, 0)
-    sliderBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    sliderBtn.Text = ""
-    sliderBtn.BorderSizePixel = 0
-    
-    local sliderCorner = Instance.new("UICorner")
-    sliderCorner.CornerRadius = UDim.new(1, 0)
-    sliderCorner.Parent = sliderBtn
-    
-    sliderFill.Parent = sliderBg
-    sliderBtn.Parent = sliderBg
-    sliderBg.Parent = content
-    
-    -- DRAG SLIDER
-    local dragging = false
-    sliderBtn.MouseButton1Down:Connect(function()
-        dragging = true
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local pos = input.Position.X
-            local framePos = sliderBg.AbsolutePosition.X
-            local newPercent = math.clamp((pos - framePos) / sliderBg.AbsoluteSize.X, 0, 1)
-            local newDist = math.floor(newPercent * 300)
-            newDist = math.clamp(newDist, 50, 300)
-            Settings.MaxDistance = newDist
-            sliderFill.Size = UDim2.new(newDist / 300, 0, 1, 0)
-            sliderBtn.Position = UDim2.new(newDist / 300, -0.04, -0.75, 0)
-            distLabel.Text = "📏 DISTANCE: " .. newDist .. "m"
-        end
-    end)
-    
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-    
-    -- SMOOTHNESS SLIDER
-    local smoothLabel = Instance.new("TextLabel")
-    smoothLabel.Size = UDim2.new(0.9, 0, 0, 25)
-    smoothLabel.Position = UDim2.new(0.05, 0, 0.57, 0)
-    smoothLabel.Text = "🎯 SMOOTHNESS: " .. string.format("%.2f", Settings.Smoothness)
-    smoothLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    smoothLabel.BackgroundTransparency = 1
-    smoothLabel.TextScaled = true
-    smoothLabel.Font = Enum.Font.Gotham
-    smoothLabel.Parent = content
-    
-    local smoothBg = Instance.new("Frame")
-    smoothBg.Size = UDim2.new(0.9, 0, 0, 8)
-    smoothBg.Position = UDim2.new(0.05, 0, 0.66, 0)
-    smoothBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    smoothBg.BorderSizePixel = 0
-    
-    local smoothFill = Instance.new("Frame")
-    smoothFill.Size = UDim2.new((1 - Settings.Smoothness) / 0.9, 0, 1, 0)
-    smoothFill.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-    smoothFill.BorderSizePixel = 0
-    
-    local smoothBtn = Instance.new("TextButton")
-    smoothBtn.Size = UDim2.new(0, 20, 0, 20)
-    smoothBtn.Position = UDim2.new((1 - Settings.Smoothness) / 0.9, -0.04, -0.75, 0)
-    smoothBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    smoothBtn.Text = ""
-    smoothBtn.BorderSizePixel = 0
-    
-    local smoothBtnCorner = Instance.new("UICorner")
-    smoothBtnCorner.CornerRadius = UDim.new(1, 0)
-    smoothBtnCorner.Parent = smoothBtn
-    
-    smoothFill.Parent = smoothBg
-    smoothBtn.Parent = smoothBg
-    smoothBg.Parent = content
-    
-    local draggingSmooth = false
-    smoothBtn.MouseButton1Down:Connect(function()
-        draggingSmooth = true
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if draggingSmooth and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local pos = input.Position.X
-            local framePos = smoothBg.AbsolutePosition.X
-            local newPercent = math.clamp((pos - framePos) / smoothBg.AbsoluteSize.X, 0, 1)
-            local newSmooth = 1 - (newPercent * 0.9)
-            newSmooth = math.clamp(newSmooth, 0.1, 0.9)
-            Settings.Smoothness = newSmooth
-            smoothFill.Size = UDim2.new(newPercent, 0, 1, 0)
-            smoothBtn.Position = UDim2.new(newPercent, -0.04, -0.75, 0)
-            smoothLabel.Text = "🎯 SMOOTHNESS: " .. string.format("%.2f", newSmooth)
-        end
-    end)
-    
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            draggingSmooth = false
-        end
-    end)
-    
-    -- STATUS
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(0.9, 0, 0, 30)
-    statusLabel.Position = UDim2.new(0.05, 0, 0.76, 0)
-    statusLabel.Text = "🎯 TARGET: None"
-    statusLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.TextScaled = true
-    statusLabel.Font = Enum.Font.Gotham
-    statusLabel.Parent = content
-    
-    -- FOOTER
+    -- Footer
     local footer = Instance.new("TextLabel")
-    footer.Size = UDim2.new(1, 0, 0, 25)
-    footer.Position = UDim2.new(0, 0, 1, -25)
-    footer.Text = "© milanlan0073-alt"
+    footer.Size = UDim2.new(1, 0, 0, 18)
+    footer.Position = UDim2.new(0, 0, 1, -18)
+    footer.Text = "Off/On to change target"
     footer.TextColor3 = Color3.fromRGB(100, 100, 100)
     footer.BackgroundTransparency = 1
     footer.TextScaled = true
     footer.Font = Enum.Font.Gotham
     footer.Parent = frame
     
-    -- ASSEMBLE
+    -- Assemble
     titleBar.Parent = frame
     content.Parent = frame
     lockBtn.Parent = content
-    espBtn.Parent = content
+    playerBtn.Parent = content
+    npcBtn.Parent = content
+    targetLabel.Parent = content
+    distLabel.Parent = content
+    typeLabel.Parent = content
     frame.Parent = sg
+    
+    -- UPDATE INFO LOOP
+    spawn(function()
+        while frame and frame.Parent do
+            if CurrentTarget and IsAlive(CurrentTarget) then
+                local dist = TargetPart and math.floor((TargetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 0
+                local targetType = IsNPC(CurrentTarget) and "👹 NPC" or "👤 PLAYER"
+                targetLabel.Text = "🎯 " .. (CurrentTarget.Name or "?")
+                targetLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+                distLabel.Text = "📏 " .. dist .. "m"
+                typeLabel.Text = targetType
+                typeLabel.TextColor3 = IsNPC(CurrentTarget) and Color3.fromRGB(255, 150, 50) or Color3.fromRGB(80, 150, 255)
+            else
+                targetLabel.Text = "🎯 No Target"
+                targetLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+                distLabel.Text = "📏 --m"
+                typeLabel.Text = ""
+            end
+            task.wait(0.3)
+        end
+    end)
     
     -- DRAG FRAME
     local dragFrame = false
@@ -414,64 +391,39 @@ local function CreateGUI()
             dragFrame = false
         end
     end)
-    
-    -- UPDATE STATUS LOOP
-    spawn(function()
-        while frame and frame.Parent do
-            if CurrentTarget and IsAlive(CurrentTarget) then
-                local dist = TargetPart and math.floor((TargetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 0
-                statusLabel.Text = "🎯 " .. (CurrentTarget.Name or "?") .. " (" .. dist .. "m)"
-            else
-                statusLabel.Text = "🎯 TARGET: None"
-            end
-            task.wait(0.3)
-        end
-    end)
 end
 
 -- ========== MAIN LOOP ==========
 RunService.RenderStepped:Connect(function()
     if not LocalPlayer.Character then return end
     
-    -- Auto Lock
-    if Settings.AutoLock then
-        local newTarget = GetClosestTarget()
-        if newTarget and newTarget ~= CurrentTarget then
-            CurrentTarget = newTarget
-            TargetPart = GetBestHitbox(CurrentTarget)
+    if Settings.Enabled then
+        -- Cari target terdekat (player atau NPC)
+        if not CurrentTarget or not IsAlive(CurrentTarget) then
+            local newTarget, targetType = GetClosestTarget()
+            if newTarget then
+                CurrentTarget = newTarget
+                TargetPart = GetBestHitbox(CurrentTarget)
+                TargetHumanoid = CurrentTarget:FindFirstChild("Humanoid")
+            end
         end
         
+        -- Kalo target mati, clear
         if CurrentTarget and not IsAlive(CurrentTarget) then
             CurrentTarget = nil
             TargetPart = nil
+            TargetHumanoid = nil
         end
         
-        -- Lock camera
+        -- LOCK CAMERA ke target
         if CurrentTarget and TargetPart and TargetPart.Parent then
             local targetPos = TargetPart.Position
             local currentPos = Camera.CFrame.Position
             Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(currentPos, targetPos), Settings.Smoothness)
         end
-    end
-    
-    -- ESP
-    if Settings.ShowESP then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character and IsAlive(p.Character) then
-                if not ESPObjects[p.Character] then
-                    CreateESP(p.Character)
-                end
-            end
-        end
-        -- Bersihkan ESP yang mati
-        for char, esp in pairs(ESPObjects) do
-            if not char or not char.Parent or not IsAlive(char) then
-                pcall(function() esp:Destroy() end)
-                ESPObjects[char] = nil
-            end
-        end
-    else
-        ClearESP()
+        
+        -- BODY FOLLOW - karakter ngikutin target
+        BodyFollowTarget()
     end
 end)
 
@@ -481,9 +433,9 @@ spawn(function()
     pcall(CreateGUI)
     game:GetService("StarterGui"):SetCore("SendNotification", {
         Title = "⚡ CENDOL HUB",
-        Text = "Loaded! Use GUI to toggle ESP & Auto Lock",
+        Text = "Player + NPC Lock | Body Follow | Off/On to change target",
         Duration = 3
     })
-    print("=== CENDOL HUB LOADED ===")
+    print("=== CENDOL HUB PLAYER+NPC BODY LOCK LOADED ===")
 end)
 ]])()
