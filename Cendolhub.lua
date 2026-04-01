@@ -1,5 +1,6 @@
--- CENDOL HUB - CROSSHAIR + BODY ROTATION
--- Crosshair target | Karakter auto rotate ke target | Camera lock
+-- CENDOL HUB - VOLUME CONTROL UI
+-- Volume Turun = Minimize | Volume Naik = Maximize
+-- Crosshair | Body Rotate | Camera Lock
 -- By: milanlan0073-alt
 
 loadstring([[
@@ -15,14 +16,18 @@ local Settings = {
     LockPlayer = true,
     LockNPC = true,
     CameraLock = true,
-    BodyRotate = true,        -- Karakter muter ke target (tanpa gerak)
+    BodyRotate = true,
     MaxDistance = 150,
-    Smoothness = 0.4
+    Smoothness = 0.4,
+    UIMinimized = false      -- UI dalam keadaan minim?
 }
 
 local CurrentTarget = nil
 local TargetPart = nil
 local Crosshair = nil
+local UI = {}
+local MainContainer = nil
+local MinimizedBar = nil
 
 -- HITBOXES
 local Hitboxes = {"Head", "UpperTorso", "HumanoidRootPart", "Torso"}
@@ -109,8 +114,7 @@ local function GetBestHitbox(char)
     return char:FindFirstChild("HumanoidRootPart")
 end
 
--- ========== BODY ROTATION ==========
--- Karakter langsung muter ke target (tanpa gerak)
+-- BODY ROTATION
 local function RotateToTarget()
     if not Settings.BodyRotate then return end
     if not CurrentTarget or not IsAlive(CurrentTarget) then return end
@@ -118,24 +122,17 @@ local function RotateToTarget()
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     local targetRoot = CurrentTarget:FindFirstChild("HumanoidRootPart")
-    
     if not myRoot or not targetRoot then return end
     
-    -- Hitung arah ke target
     local direction = (targetRoot.Position - myRoot.Position).Unit
     local lookAt = CFrame.new(myRoot.Position, myRoot.Position + direction)
-    
-    -- Langsung rotasi karakter ke target
     myChar:SetPrimaryPartCFrame(lookAt)
 end
 
 -- ========== CROSSHAIR ==========
 local function CreateCrosshair()
-    -- Tunggu PlayerGui
     for i = 1, 10 do
-        if LocalPlayer:FindFirstChild("PlayerGui") then
-            break
-        end
+        if LocalPlayer:FindFirstChild("PlayerGui") then break end
         wait(0.5)
     end
     
@@ -144,7 +141,6 @@ local function CreateCrosshair()
     sg.Parent = LocalPlayer.PlayerGui
     sg.ResetOnSpawn = false
     
-    -- Lingkaran luar
     local outer = Instance.new("Frame")
     outer.Size = UDim2.new(0, 40, 0, 40)
     outer.Position = UDim2.new(0.5, -20, 0.5, -20)
@@ -157,7 +153,6 @@ local function CreateCrosshair()
     outerCorner.CornerRadius = UDim.new(1, 0)
     outerCorner.Parent = outer
     
-    -- Lingkaran dalam (warna berubah kalo ada target)
     local inner = Instance.new("Frame")
     inner.Size = UDim2.new(0, 20, 0, 20)
     inner.Position = UDim2.new(0.5, -10, 0.5, -10)
@@ -170,7 +165,6 @@ local function CreateCrosshair()
     innerCorner.CornerRadius = UDim.new(1, 0)
     innerCorner.Parent = inner
     
-    -- Titik tengah
     local dot = Instance.new("Frame")
     dot.Size = UDim2.new(0, 4, 0, 4)
     dot.Position = UDim2.new(0.5, -2, 0.5, -2)
@@ -182,7 +176,6 @@ local function CreateCrosshair()
     dotCorner.CornerRadius = UDim.new(1, 0)
     dotCorner.Parent = dot
     
-    -- Target Info Text
     local targetText = Instance.new("TextLabel")
     targetText.Size = UDim2.new(0, 200, 0, 25)
     targetText.Position = UDim2.new(0.5, -100, 0.5, 30)
@@ -194,7 +187,6 @@ local function CreateCrosshair()
     targetText.Text = ""
     targetText.ZIndex = 10
     
-    -- Distance Text
     local distText = Instance.new("TextLabel")
     distText.Size = UDim2.new(0, 100, 0, 20)
     distText.Position = UDim2.new(0.5, -50, 0.5, 55)
@@ -214,23 +206,19 @@ local function CreateCrosshair()
     return {outer, inner, targetText, distText}
 end
 
--- Update crosshair berdasarkan target
 local function UpdateCrosshair()
     if not Crosshair then return end
     local outer, inner, targetText, distText = unpack(Crosshair)
     
     if CurrentTarget and IsAlive(CurrentTarget) then
-        -- Ada target: inner jadi merah terang
         inner.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
         inner.BackgroundTransparency = 0.3
         outer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        
         local targetType = IsNPC(CurrentTarget) and "👹 " or "👤 "
         local dist = TargetPart and math.floor((TargetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 0
         targetText.Text = targetType .. (CurrentTarget.Name or "Target")
         distText.Text = dist .. "m"
     else
-        -- Ga ada target: inner jadi abu-abu
         inner.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
         inner.BackgroundTransparency = 0.6
         outer.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
@@ -239,8 +227,8 @@ local function UpdateCrosshair()
     end
 end
 
--- ========== SIMPLE GUI ==========
-local function CreateGUI()
+-- ========== UI DENGAN MINIMIZE/MAXIMIZE ==========
+local function CreateUI()
     for i = 1, 10 do
         if LocalPlayer:FindFirstChild("PlayerGui") then break end
         wait(0.5)
@@ -251,18 +239,21 @@ local function CreateGUI()
     sg.Parent = LocalPlayer.PlayerGui
     sg.ResetOnSpawn = false
     
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 240, 0, 200)
-    frame.Position = UDim2.new(0, 10, 0, 80)
-    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    frame.BackgroundTransparency = 0.3
-    frame.BorderSizePixel = 0
+    -- ===== MAIN PANEL (UKURAN PENUH) =====
+    local mainPanel = Instance.new("Frame")
+    mainPanel.Size = UDim2.new(0, 240, 0, 220)
+    mainPanel.Position = UDim2.new(0, 10, 0, 80)
+    mainPanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    mainPanel.BackgroundTransparency = 0.25
+    mainPanel.BorderSizePixel = 0
+    mainPanel.Visible = not Settings.UIMinimized
+    mainPanel.ZIndex = 5
     
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
-    corner.Parent = frame
+    local panelCorner = Instance.new("UICorner")
+    panelCorner.CornerRadius = UDim.new(0, 12)
+    panelCorner.Parent = mainPanel
     
-    -- Title (draggable)
+    -- Title Bar (bisa drag)
     local titleBar = Instance.new("Frame")
     titleBar.Size = UDim2.new(1, 0, 0, 35)
     titleBar.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
@@ -382,7 +373,7 @@ local function CreateGUI()
     -- Target Info
     local targetLabel = Instance.new("TextLabel")
     targetLabel.Size = UDim2.new(0.9, 0, 0, 30)
-    targetLabel.Position = UDim2.new(0.05, 0, 0.63, 0)
+    targetLabel.Position = UDim2.new(0.05, 0, 0.6, 0)
     targetLabel.Text = "🎯 No Target"
     targetLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
     targetLabel.BackgroundTransparency = 1
@@ -394,26 +385,133 @@ local function CreateGUI()
     local footer = Instance.new("TextLabel")
     footer.Size = UDim2.new(1, 0, 0, 18)
     footer.Position = UDim2.new(0, 0, 1, -18)
-    footer.Text = "Off/On to change target"
+    footer.Text = "🔊 Vol +/- : Minimize/Maximize"
     footer.TextColor3 = Color3.fromRGB(100, 100, 100)
     footer.BackgroundTransparency = 1
     footer.TextScaled = true
     footer.Font = Enum.Font.Gotham
-    footer.Parent = frame
+    footer.Parent = mainPanel
     
-    -- Assemble
-    titleBar.Parent = frame
-    content.Parent = frame
+    -- Assemble Main Panel
+    titleBar.Parent = mainPanel
+    content.Parent = mainPanel
     lockBtn.Parent = content
     playerBtn.Parent = content
     npcBtn.Parent = content
     rotateBtn.Parent = content
     targetLabel.Parent = content
-    frame.Parent = sg
+    
+    -- ===== MINIMIZED BAR (UKURAN KECIL) =====
+    local minimizedBar = Instance.new("Frame")
+    minimizedBar.Size = UDim2.new(0, 240, 0, 35)
+    minimizedBar.Position = UDim2.new(0, 10, 0, 80)
+    minimizedBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    minimizedBar.BackgroundTransparency = 0.3
+    minimizedBar.BorderSizePixel = 0
+    minimizedBar.Visible = Settings.UIMinimized
+    minimizedBar.ZIndex = 5
+    
+    local barCorner = Instance.new("UICorner")
+    barCorner.CornerRadius = UDim.new(0, 12)
+    barCorner.Parent = minimizedBar
+    
+    local barTitle = Instance.new("TextLabel")
+    barTitle.Size = UDim2.new(1, 0, 1, 0)
+    barTitle.Text = "⚡ CENDOL HUB [▼]"
+    barTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    barTitle.BackgroundTransparency = 1
+    barTitle.TextScaled = true
+    barTitle.Font = Enum.Font.GothamBold
+    barTitle.Parent = minimizedBar
+    
+    local barStatus = Instance.new("TextLabel")
+    barStatus.Size = UDim2.new(0.4, 0, 1, 0)
+    barStatus.Position = UDim2.new(0.6, 0, 0, 0)
+    barStatus.Text = ""
+    barStatus.TextColor3 = Color3.fromRGB(0, 255, 0)
+    barStatus.BackgroundTransparency = 1
+    barStatus.TextScaled = true
+    barStatus.Font = Enum.Font.Gotham
+    barStatus.Parent = minimizedBar
+    
+    -- Update status di minimized bar
+    spawn(function()
+        while minimizedBar and minimizedBar.Parent do
+            if CurrentTarget and IsAlive(CurrentTarget) then
+                local targetType = IsNPC(CurrentTarget) and "👹" or "👤"
+                barStatus.Text = targetType .. " " .. (CurrentTarget.Name or "?")
+            else
+                barStatus.Text = Settings.Enabled and "🔍" or "⏸"
+            end
+            task.wait(0.3)
+        end
+    end)
+    
+    -- Drag untuk minimized bar juga
+    local function MakeDraggable(frame)
+        local dragFrame = false
+        local dragStart, startPos
+        
+        frame.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragFrame = true
+                dragStart = input.Position
+                startPos = frame.Position
+            end
+        end)
+        
+        UserInputService.InputChanged:Connect(function(input)
+            if dragFrame and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+                local delta = input.Position - dragStart
+                local newX = startPos.X.Offset + delta.X
+                local newY = startPos.Y.Offset + delta.Y
+                frame.Position = UDim2.new(startPos.X.Scale, newX, startPos.Y.Scale, newY)
+                -- Juga pindahin panel lain
+                mainPanel.Position = UDim2.new(startPos.X.Scale, newX, startPos.Y.Scale, newY)
+            end
+        end)
+        
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragFrame = false
+            end
+        end)
+    end
+    
+    MakeDraggable(minimizedBar)
+    MakeDraggable(mainPanel)
+    
+    -- Fungsi Minimize/Maximize
+    local function MinimizeUI()
+        if Settings.UIMinimized then return end
+        Settings.UIMinimized = true
+        mainPanel.Visible = false
+        minimizedBar.Visible = true
+        -- Update posisi bar sama kayak panel
+        minimizedBar.Position = mainPanel.Position
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "CENDOL HUB",
+            Text = "UI Minimized | Vol + to open",
+            Duration = 1
+        })
+    end
+    
+    local function MaximizeUI()
+        if not Settings.UIMinimized then return end
+        Settings.UIMinimized = false
+        mainPanel.Visible = true
+        minimizedBar.Visible = false
+        mainPanel.Position = minimizedBar.Position
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "CENDOL HUB",
+            Text = "UI Maximized | Vol - to close",
+            Duration = 1
+        })
+    end
     
     -- UPDATE INFO LOOP
     spawn(function()
-        while frame and frame.Parent do
+        while mainPanel and mainPanel.Parent do
             if CurrentTarget and IsAlive(CurrentTarget) then
                 local targetType = IsNPC(CurrentTarget) and "👹" or "👤"
                 local dist = TargetPart and math.floor((TargetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 0
@@ -427,30 +525,97 @@ local function CreateGUI()
         end
     end)
     
-    -- DRAG FRAME
-    local dragFrame = false
-    local dragStart, startPos
+    mainPanel.Parent = sg
+    minimizedBar.Parent = sg
     
-    titleBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragFrame = true
-            dragStart = input.Position
-            startPos = frame.Position
+    -- Simpan references
+    UI.MainPanel = mainPanel
+    UI.MinimizedBar = minimizedBar
+    UI.Minimize = MinimizeUI
+    UI.Maximize = MaximizeUI
+    
+    return {MinimizeUI, MaximizeUI}
+end
+
+-- ========== VOLUME BUTTON CONTROLS ==========
+local function SetupVolumeControls(minimizeFunc, maximizeFunc)
+    -- Deteksi tombol volume Android
+    local VirtualInput = game:GetService("VirtualInputManager")
+    
+    -- Method 1: Pake UserInputService buat deteksi key (Volume up/down biasanya ga terdetek langsung, tapi kita pake fallback)
+    -- Method 2: Pake tombol di GUI juga sebagai backup
+    
+    -- Backup: Tambah tombol di minimized bar untuk maximize
+    -- Backup: Tambah tombol di main panel untuk minimize
+    
+    -- Kita tambah tombol minimize di main panel (icon -)
+    if UI.MainPanel then
+        local minimizeBtn = Instance.new("TextButton")
+        minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+        minimizeBtn.Position = UDim2.new(1, -35, 0, 5)
+        minimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+        minimizeBtn.BackgroundTransparency = 0.5
+        minimizeBtn.Text = "−"
+        minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        minimizeBtn.TextScaled = true
+        minimizeBtn.Font = Enum.Font.GothamBold
+        minimizeBtn.BorderSizePixel = 0
+        minimizeBtn.ZIndex = 10
+        
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(1, 0)
+        btnCorner.Parent = minimizeBtn
+        
+        minimizeBtn.MouseButton1Click:Connect(function()
+            minimizeFunc()
+        end)
+        minimizeBtn.Parent = UI.MainPanel
+    end
+    
+    -- Tambah tombol maximize di minimized bar (icon +)
+    if UI.MinimizedBar then
+        local maximizeBtn = Instance.new("TextButton")
+        maximizeBtn.Size = UDim2.new(0, 30, 0, 30)
+        maximizeBtn.Position = UDim2.new(1, -35, 0, 2)
+        maximizeBtn.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+        maximizeBtn.BackgroundTransparency = 0.5
+        maximizeBtn.Text = "+"
+        maximizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        maximizeBtn.TextScaled = true
+        maximizeBtn.Font = Enum.Font.GothamBold
+        maximizeBtn.BorderSizePixel = 0
+        maximizeBtn.ZIndex = 10
+        
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(1, 0)
+        btnCorner.Parent = maximizeBtn
+        
+        maximizeBtn.MouseButton1Click:Connect(function()
+            maximizeFunc()
+        end)
+        maximizeBtn.Parent = UI.MinimizedBar
+    end
+    
+    -- Fallback: Keyboard bind (untuk testing)
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        -- Volume Down (biasanya KeyCode.VolumeDown)
+        if input.KeyCode == Enum.KeyCode.VolumeDown then
+            minimizeFunc()
+        end
+        
+        -- Volume Up
+        if input.KeyCode == Enum.KeyCode.VolumeUp then
+            maximizeFunc()
         end
     end)
     
-    UserInputService.InputChanged:Connect(function(input)
-        if dragFrame and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
-            local delta = input.Position - dragStart
-            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-    
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragFrame = false
-        end
-    end)
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "⚡ CENDOL HUB",
+        Text = "🔊 Vol - = Minimize | Vol + = Maximize",
+        Duration = 3
+    })
 end
 
 -- ========== MAIN LOOP ==========
@@ -458,7 +623,6 @@ RunService.RenderStepped:Connect(function()
     if not LocalPlayer.Character then return end
     
     if Settings.Enabled then
-        -- Cari target
         if not CurrentTarget or not IsAlive(CurrentTarget) then
             local newTarget = GetClosestTarget()
             if newTarget then
@@ -472,18 +636,15 @@ RunService.RenderStepped:Connect(function()
             TargetPart = nil
         end
         
-        -- Camera Lock
         if Settings.CameraLock and CurrentTarget and TargetPart and TargetPart.Parent then
             local targetPos = TargetPart.Position
             local currentPos = Camera.CFrame.Position
             Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(currentPos, targetPos), Settings.Smoothness)
         end
         
-        -- Body Rotation (karakter muter ke target)
         RotateToTarget()
     end
     
-    -- Update crosshair setiap frame
     UpdateCrosshair()
 end)
 
@@ -491,12 +652,10 @@ end)
 spawn(function()
     wait(1)
     Crosshair = CreateCrosshair()
-    pcall(CreateGUI)
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "⚡ CENDOL HUB",
-        Text = "Crosshair Active | Karakter auto rotate ke target",
-        Duration = 3
-    })
-    print("=== CENDOL HUB CROSSHAIR LOADED ===")
+    local uiFuncs = CreateUI()
+    if uiFuncs then
+        SetupVolumeControls(uiFuncs[1], uiFuncs[2])
+    end
+    print("=== CENDOL HUB VOLUME CONTROL LOADED ===")
 end)
 ]])()
