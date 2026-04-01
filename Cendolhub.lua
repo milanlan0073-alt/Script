@@ -1,12 +1,12 @@
--- CENDOL HUB - VOLUME CONTROL UI
--- Volume Turun = Minimize | Volume Naik = Maximize
--- Crosshair | Body Rotate | Camera Lock
+-- CENDOL HUB V2 - ENHANCED CAMERA & UI
+-- Camera Follow | Crosshair | Body Rotate
 -- By: milanlan0073-alt
 
 loadstring([[
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
@@ -15,27 +15,27 @@ local Settings = {
     Enabled = true,
     LockPlayer = true,
     LockNPC = true,
-    CameraLock = true,
+    CameraFollow = true,
+    CameraSmoothness = 0.25,
     BodyRotate = true,
-    MaxDistance = 150,
-    Smoothness = 0.4,
-    UIMinimized = false      -- UI dalam keadaan minim?
+    MaxDistance = 200,
+    CameraOffset = Vector3.new(0, 2, 0),
+    UIMinimized = false
 }
 
 local CurrentTarget = nil
 local TargetPart = nil
 local Crosshair = nil
 local UI = {}
-local MainContainer = nil
-local MinimizedBar = nil
 
--- HITBOXES
+-- HITBOXES (prioritas)
 local Hitboxes = {"Head", "UpperTorso", "HumanoidRootPart", "Torso"}
 
 -- NPC DETECTION
 local NPCKeywords = {
     "Cursed", "Spirit", "Curse", "NPC", "Mob", "Enemy", "Boss",
-    "Raid", "Demon", "Shadow", "Monster", "Training", "Dummy"
+    "Raid", "Demon", "Shadow", "Monster", "Training", "Dummy",
+    "Zombie", "Skeleton", "Goblin", "Orc", "Troll", "Dragon"
 }
 
 -- UTILITIES
@@ -58,7 +58,7 @@ local function GetDistance(a, b)
     return (a.Position - b.Position).Magnitude
 end
 
--- GET TARGET TERDEKAT
+-- GET TARGET TERDEKAT (OPTIMIZED)
 local function GetClosestTarget()
     local closest = nil
     local closestDist = Settings.MaxDistance
@@ -129,7 +129,22 @@ local function RotateToTarget()
     myChar:SetPrimaryPartCFrame(lookAt)
 end
 
--- ========== CROSSHAIR ==========
+-- ========== ENHANCED CAMERA FOLLOW ==========
+local function UpdateCameraFollow()
+    if not Settings.CameraFollow then return end
+    if not CurrentTarget or not IsAlive(CurrentTarget) then return end
+    if not TargetPart or not TargetPart.Parent then return end
+    
+    local targetPos = TargetPart.Position + Settings.CameraOffset
+    local currentCFrame = Camera.CFrame
+    local desiredCFrame = CFrame.new(currentCFrame.Position, targetPos)
+    
+    -- Smooth interpolation
+    local newCFrame = currentCFrame:Lerp(desiredCFrame, Settings.CameraSmoothness)
+    Camera.CFrame = newCFrame
+end
+
+-- ========== CROSSHAIR ENHANCED ==========
 local function CreateCrosshair()
     for i = 1, 10 do
         if LocalPlayer:FindFirstChild("PlayerGui") then break end
@@ -140,12 +155,14 @@ local function CreateCrosshair()
     sg.Name = "CendolCrosshair"
     sg.Parent = LocalPlayer.PlayerGui
     sg.ResetOnSpawn = false
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
+    -- Outer circle
     local outer = Instance.new("Frame")
-    outer.Size = UDim2.new(0, 40, 0, 40)
-    outer.Position = UDim2.new(0.5, -20, 0.5, -20)
+    outer.Size = UDim2.new(0, 44, 0, 44)
+    outer.Position = UDim2.new(0.5, -22, 0.5, -22)
     outer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    outer.BackgroundTransparency = 0.8
+    outer.BackgroundTransparency = 0.85
     outer.BorderSizePixel = 0
     outer.ZIndex = 10
     
@@ -153,11 +170,12 @@ local function CreateCrosshair()
     outerCorner.CornerRadius = UDim.new(1, 0)
     outerCorner.Parent = outer
     
+    -- Inner circle
     local inner = Instance.new("Frame")
-    inner.Size = UDim2.new(0, 20, 0, 20)
-    inner.Position = UDim2.new(0.5, -10, 0.5, -10)
+    inner.Size = UDim2.new(0, 24, 0, 24)
+    inner.Position = UDim2.new(0.5, -12, 0.5, -12)
     inner.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-    inner.BackgroundTransparency = 0.5
+    inner.BackgroundTransparency = 0.4
     inner.BorderSizePixel = 0
     inner.ZIndex = 11
     
@@ -165,9 +183,10 @@ local function CreateCrosshair()
     innerCorner.CornerRadius = UDim.new(1, 0)
     innerCorner.Parent = inner
     
+    -- Center dot
     local dot = Instance.new("Frame")
-    dot.Size = UDim2.new(0, 4, 0, 4)
-    dot.Position = UDim2.new(0.5, -2, 0.5, -2)
+    dot.Size = UDim2.new(0, 6, 0, 6)
+    dot.Position = UDim2.new(0.5, -3, 0.5, -3)
     dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     dot.BorderSizePixel = 0
     dot.ZIndex = 12
@@ -176,58 +195,76 @@ local function CreateCrosshair()
     dotCorner.CornerRadius = UDim.new(1, 0)
     dotCorner.Parent = dot
     
-    local targetText = Instance.new("TextLabel")
-    targetText.Size = UDim2.new(0, 200, 0, 25)
-    targetText.Position = UDim2.new(0.5, -100, 0.5, 30)
-    targetText.BackgroundTransparency = 1
-    targetText.TextColor3 = Color3.fromRGB(255, 255, 255)
-    targetText.TextStrokeTransparency = 0.5
-    targetText.TextScaled = true
-    targetText.Font = Enum.Font.GothamBold
-    targetText.Text = ""
-    targetText.ZIndex = 10
+    -- Target info panel
+    local targetPanel = Instance.new("Frame")
+    targetPanel.Size = UDim2.new(0, 280, 0, 60)
+    targetPanel.Position = UDim2.new(0.5, -140, 0.5, 80)
+    targetPanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    targetPanel.BackgroundTransparency = 0.6
+    targetPanel.BorderSizePixel = 0
+    targetPanel.ZIndex = 10
     
-    local distText = Instance.new("TextLabel")
-    distText.Size = UDim2.new(0, 100, 0, 20)
-    distText.Position = UDim2.new(0.5, -50, 0.5, 55)
-    distText.BackgroundTransparency = 1
-    distText.TextColor3 = Color3.fromRGB(200, 200, 200)
-    distText.TextScaled = true
-    distText.Font = Enum.Font.Gotham
-    distText.Text = ""
-    distText.ZIndex = 10
+    local panelCorner = Instance.new("UICorner")
+    panelCorner.CornerRadius = UDim.new(0, 12)
+    panelCorner.Parent = targetPanel
+    
+    local targetName = Instance.new("TextLabel")
+    targetName.Size = UDim2.new(1, 0, 0.5, 0)
+    targetName.Position = UDim2.new(0, 0, 0, 0)
+    targetName.BackgroundTransparency = 1
+    targetName.TextColor3 = Color3.fromRGB(255, 255, 255)
+    targetName.TextScaled = true
+    targetName.Font = Enum.Font.GothamBold
+    targetName.Text = ""
+    targetName.ZIndex = 11
+    targetName.Parent = targetPanel
+    
+    local targetDist = Instance.new("TextLabel")
+    targetDist.Size = UDim2.new(1, 0, 0.5, 0)
+    targetDist.Position = UDim2.new(0, 0, 0.5, 0)
+    targetDist.BackgroundTransparency = 1
+    targetDist.TextColor3 = Color3.fromRGB(200, 200, 200)
+    targetDist.TextScaled = true
+    targetDist.Font = Enum.Font.Gotham
+    targetDist.Text = ""
+    targetDist.ZIndex = 11
+    targetDist.Parent = targetPanel
     
     inner.Parent = outer
     dot.Parent = inner
-    targetText.Parent = sg
-    distText.Parent = sg
     outer.Parent = sg
+    targetPanel.Parent = sg
     
-    return {outer, inner, targetText, distText}
+    return {outer, inner, targetName, targetDist, targetPanel}
 end
 
 local function UpdateCrosshair()
     if not Crosshair then return end
-    local outer, inner, targetText, distText = unpack(Crosshair)
+    local outer, inner, targetName, targetDist, targetPanel = unpack(Crosshair)
     
     if CurrentTarget and IsAlive(CurrentTarget) then
         inner.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-        inner.BackgroundTransparency = 0.3
-        outer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        local targetType = IsNPC(CurrentTarget) and "👹 " or "👤 "
+        inner.BackgroundTransparency = 0.2
+        outer.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+        outer.BackgroundTransparency = 0.7
+        
+        local targetType = IsNPC(CurrentTarget) and "👹 NPC" or "👤 PLAYER"
         local dist = TargetPart and math.floor((TargetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 0
-        targetText.Text = targetType .. (CurrentTarget.Name or "Target")
-        distText.Text = dist .. "m"
+        local health = CurrentTarget:FindFirstChild("Humanoid") and math.floor(CurrentTarget.Humanoid.Health) or 0
+        
+        targetName.Text = targetType .. " | " .. (CurrentTarget.Name or "Target")
+        targetDist.Text = "📏 " .. dist .. "m | ❤️ " .. health .. " HP"
+        targetPanel.Visible = true
     else
         inner.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
         inner.BackgroundTransparency = 0.6
         outer.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
-        targetText.Text = ""
-        distText.Text = ""
+        outer.BackgroundTransparency = 0.85
+        targetPanel.Visible = false
     end
 end
 
--- ========== UI DENGAN MINIMIZE/MAXIMIZE ==========
+-- ========== ENHANCED UI (LEBAR & RAPIH) ==========
 local function CreateUI()
     for i = 1, 10 do
         if LocalPlayer:FindFirstChild("PlayerGui") then break end
@@ -238,51 +275,61 @@ local function CreateUI()
     sg.Name = "CendolHub"
     sg.Parent = LocalPlayer.PlayerGui
     sg.ResetOnSpawn = false
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
-    -- ===== MAIN PANEL (UKURAN PENUH) =====
+    -- MAIN PANEL (LEBAR)
     local mainPanel = Instance.new("Frame")
-    mainPanel.Size = UDim2.new(0, 240, 0, 220)
-    mainPanel.Position = UDim2.new(0, 10, 0, 80)
+    mainPanel.Size = UDim2.new(0, 300, 0, 280)
+    mainPanel.Position = UDim2.new(0, 15, 0, 80)
     mainPanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    mainPanel.BackgroundTransparency = 0.25
+    mainPanel.BackgroundTransparency = 0.3
     mainPanel.BorderSizePixel = 0
     mainPanel.Visible = not Settings.UIMinimized
     mainPanel.ZIndex = 5
     
     local panelCorner = Instance.new("UICorner")
-    panelCorner.CornerRadius = UDim.new(0, 12)
+    panelCorner.CornerRadius = UDim.new(0, 16)
     panelCorner.Parent = mainPanel
     
-    -- Title Bar (bisa drag)
+    -- GLOW EFFECT
+    local uiStroke = Instance.new("UIStroke")
+    uiStroke.Color = Color3.fromRGB(255, 80, 80)
+    uiStroke.Thickness = 1
+    uiStroke.Transparency = 0.7
+    uiStroke.Parent = mainPanel
+    
+    -- Title Bar
     local titleBar = Instance.new("Frame")
-    titleBar.Size = UDim2.new(1, 0, 0, 35)
+    titleBar.Size = UDim2.new(1, 0, 0, 40)
     titleBar.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-    titleBar.BackgroundTransparency = 0.4
+    titleBar.BackgroundTransparency = 0.5
     titleBar.BorderSizePixel = 0
     
     local titleCorner = Instance.new("UICorner")
-    titleCorner.CornerRadius = UDim.new(0, 12)
+    titleCorner.CornerRadius = UDim.new(0, 16)
     titleCorner.Parent = titleBar
     
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 1, 0)
-    title.Text = "⚡ CENDOL HUB"
+    title.Size = UDim2.new(1, -40, 1, 0)
+    title.Position = UDim2.new(0, 10, 0, 0)
+    title.Text = "⚡ CENDOL HUB V2"
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
     title.BackgroundTransparency = 1
     title.TextScaled = true
+    title.TextXAlignment = Enum.TextXAlignment.Left
     title.Font = Enum.Font.GothamBold
     title.Parent = titleBar
     
     -- Content
     local content = Instance.new("Frame")
-    content.Size = UDim2.new(1, 0, 1, -35)
-    content.Position = UDim2.new(0, 0, 0, 35)
+    content.Size = UDim2.new(1, -20, 1, -50)
+    content.Position = UDim2.new(0, 10, 0, 45)
     content.BackgroundTransparency = 1
     
-    -- Lock ON/OFF
+    -- Lock ON/OFF (Big Button)
     local lockBtn = Instance.new("TextButton")
-    lockBtn.Size = UDim2.new(0.9, 0, 0, 40)
-    lockBtn.Position = UDim2.new(0.05, 0, 0.05, 0)
+    lockBtn.Size = UDim2.new(1, 0, 0, 45)
+    lockBtn.Position = UDim2.new(0, 0, 0, 0)
     lockBtn.BackgroundColor3 = Settings.Enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 50, 50)
     lockBtn.Text = Settings.Enabled and "🔒 LOCK ACTIVE" or "🔓 LOCK OFF"
     lockBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -291,7 +338,7 @@ local function CreateUI()
     lockBtn.BorderSizePixel = 0
     
     local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 8)
+    btnCorner.CornerRadius = UDim.new(0, 10)
     btnCorner.Parent = lockBtn
     
     lockBtn.MouseButton1Click:Connect(function()
@@ -307,10 +354,16 @@ local function CreateUI()
         UpdateCrosshair()
     end)
     
+    -- Toggle Row (Player & NPC)
+    local toggleRow = Instance.new("Frame")
+    toggleRow.Size = UDim2.new(1, 0, 0, 40)
+    toggleRow.Position = UDim2.new(0, 0, 0, 55)
+    toggleRow.BackgroundTransparency = 1
+    
     -- Lock Player Toggle
     local playerBtn = Instance.new("TextButton")
-    playerBtn.Size = UDim2.new(0.43, 0, 0, 30)
-    playerBtn.Position = UDim2.new(0.05, 0, 0.28, 0)
+    playerBtn.Size = UDim2.new(0.48, 0, 1, 0)
+    playerBtn.Position = UDim2.new(0, 0, 0, 0)
     playerBtn.BackgroundColor3 = Settings.LockPlayer and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
     playerBtn.Text = "👤 PLAYER"
     playerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -330,8 +383,8 @@ local function CreateUI()
     
     -- Lock NPC Toggle
     local npcBtn = Instance.new("TextButton")
-    npcBtn.Size = UDim2.new(0.43, 0, 0, 30)
-    npcBtn.Position = UDim2.new(0.52, 0, 0.28, 0)
+    npcBtn.Size = UDim2.new(0.48, 0, 1, 0)
+    npcBtn.Position = UDim2.new(0.52, 0, 0, 0)
     npcBtn.BackgroundColor3 = Settings.LockNPC and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
     npcBtn.Text = "👹 NPC"
     npcBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -349,10 +402,13 @@ local function CreateUI()
         if Settings.Enabled then CurrentTarget = nil end
     end)
     
+    playerBtn.Parent = toggleRow
+    npcBtn.Parent = toggleRow
+    
     -- Body Rotate Toggle
     local rotateBtn = Instance.new("TextButton")
-    rotateBtn.Size = UDim2.new(0.9, 0, 0, 35)
-    rotateBtn.Position = UDim2.new(0.05, 0, 0.43, 0)
+    rotateBtn.Size = UDim2.new(1, 0, 0, 40)
+    rotateBtn.Position = UDim2.new(0, 0, 0, 105)
     rotateBtn.BackgroundColor3 = Settings.BodyRotate and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
     rotateBtn.Text = Settings.BodyRotate and "🔄 BODY ROTATE: ON" or "🔄 BODY ROTATE: OFF"
     rotateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -361,7 +417,7 @@ local function CreateUI()
     rotateBtn.BorderSizePixel = 0
     
     local rotateCorner = Instance.new("UICorner")
-    rotateCorner.CornerRadius = UDim.new(0, 8)
+    rotateCorner.CornerRadius = UDim.new(0, 10)
     rotateCorner.Parent = rotateBtn
     
     rotateBtn.MouseButton1Click:Connect(function()
@@ -370,57 +426,85 @@ local function CreateUI()
         rotateBtn.BackgroundColor3 = Settings.BodyRotate and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
     end)
     
-    -- Target Info
-    local targetLabel = Instance.new("TextLabel")
-    targetLabel.Size = UDim2.new(0.9, 0, 0, 30)
-    targetLabel.Position = UDim2.new(0.05, 0, 0.6, 0)
-    targetLabel.Text = "🎯 No Target"
-    targetLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-    targetLabel.BackgroundTransparency = 1
-    targetLabel.TextScaled = true
-    targetLabel.Font = Enum.Font.Gotham
-    targetLabel.Parent = content
+    -- Camera Follow Toggle
+    local cameraBtn = Instance.new("TextButton")
+    cameraBtn.Size = UDim2.new(1, 0, 0, 40)
+    cameraBtn.Position = UDim2.new(0, 0, 0, 155)
+    cameraBtn.BackgroundColor3 = Settings.CameraFollow and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
+    cameraBtn.Text = Settings.CameraFollow and "📷 CAMERA FOLLOW: ON" or "📷 CAMERA FOLLOW: OFF"
+    cameraBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    cameraBtn.TextScaled = true
+    cameraBtn.Font = Enum.Font.GothamBold
+    cameraBtn.BorderSizePixel = 0
     
-    -- Footer
-    local footer = Instance.new("TextLabel")
-    footer.Size = UDim2.new(1, 0, 0, 18)
-    footer.Position = UDim2.new(0, 0, 1, -18)
-    footer.Text = "🔊 Vol +/- : Minimize/Maximize"
-    footer.TextColor3 = Color3.fromRGB(100, 100, 100)
-    footer.BackgroundTransparency = 1
-    footer.TextScaled = true
-    footer.Font = Enum.Font.Gotham
-    footer.Parent = mainPanel
+    local cameraCorner = Instance.new("UICorner")
+    cameraCorner.CornerRadius = UDim.new(0, 10)
+    cameraCorner.Parent = cameraBtn
+    
+    cameraBtn.MouseButton1Click:Connect(function()
+        Settings.CameraFollow = not Settings.CameraFollow
+        cameraBtn.Text = Settings.CameraFollow and "📷 CAMERA FOLLOW: ON" or "📷 CAMERA FOLLOW: OFF"
+        cameraBtn.BackgroundColor3 = Settings.CameraFollow and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
+    end)
+    
+    -- Target Info Panel
+    local targetInfo = Instance.new("Frame")
+    targetInfo.Size = UDim2.new(1, 0, 0, 50)
+    targetInfo.Position = UDim2.new(0, 0, 0, 205)
+    targetInfo.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    targetInfo.BackgroundTransparency = 0.5
+    targetInfo.BorderSizePixel = 0
+    
+    local targetInfoCorner = Instance.new("UICorner")
+    targetInfoCorner.CornerRadius = UDim.new(0, 10)
+    targetInfoCorner.Parent = targetInfo
+    
+    local targetLabel = Instance.new("TextLabel")
+    targetLabel.Size = UDim2.new(1, 0, 1, 0)
+    targetLabel.BackgroundTransparency = 1
+    targetLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+    targetLabel.TextScaled = true
+    targetLabel.Font = Enum.Font.GothamBold
+    targetLabel.Text = "🎯 No Target"
+    targetLabel.Parent = targetInfo
     
     -- Assemble Main Panel
     titleBar.Parent = mainPanel
     content.Parent = mainPanel
     lockBtn.Parent = content
-    playerBtn.Parent = content
-    npcBtn.Parent = content
+    toggleRow.Parent = content
     rotateBtn.Parent = content
-    targetLabel.Parent = content
+    cameraBtn.Parent = content
+    targetInfo.Parent = content
     
-    -- ===== MINIMIZED BAR (UKURAN KECIL) =====
+    -- MINIMIZED BAR
     local minimizedBar = Instance.new("Frame")
-    minimizedBar.Size = UDim2.new(0, 240, 0, 35)
-    minimizedBar.Position = UDim2.new(0, 10, 0, 80)
+    minimizedBar.Size = UDim2.new(0, 300, 0, 40)
+    minimizedBar.Position = UDim2.new(0, 15, 0, 80)
     minimizedBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    minimizedBar.BackgroundTransparency = 0.3
+    minimizedBar.BackgroundTransparency = 0.4
     minimizedBar.BorderSizePixel = 0
     minimizedBar.Visible = Settings.UIMinimized
     minimizedBar.ZIndex = 5
     
     local barCorner = Instance.new("UICorner")
-    barCorner.CornerRadius = UDim.new(0, 12)
+    barCorner.CornerRadius = UDim.new(0, 16)
     barCorner.Parent = minimizedBar
     
+    local barStroke = Instance.new("UIStroke")
+    barStroke.Color = Color3.fromRGB(255, 80, 80)
+    barStroke.Thickness = 1
+    barStroke.Transparency = 0.7
+    barStroke.Parent = minimizedBar
+    
     local barTitle = Instance.new("TextLabel")
-    barTitle.Size = UDim2.new(1, 0, 1, 0)
-    barTitle.Text = "⚡ CENDOL HUB [▼]"
+    barTitle.Size = UDim2.new(1, -40, 1, 0)
+    barTitle.Position = UDim2.new(0, 10, 0, 0)
+    barTitle.Text = "⚡ CENDOL HUB V2"
     barTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
     barTitle.BackgroundTransparency = 1
     barTitle.TextScaled = true
+    barTitle.TextXAlignment = Enum.TextXAlignment.Left
     barTitle.Font = Enum.Font.GothamBold
     barTitle.Parent = minimizedBar
     
@@ -441,13 +525,30 @@ local function CreateUI()
                 local targetType = IsNPC(CurrentTarget) and "👹" or "👤"
                 barStatus.Text = targetType .. " " .. (CurrentTarget.Name or "?")
             else
-                barStatus.Text = Settings.Enabled and "🔍" or "⏸"
+                barStatus.Text = Settings.Enabled and "🔍 LOCK" or "⏸ OFF"
             end
             task.wait(0.3)
         end
     end)
     
-    -- Drag untuk minimized bar juga
+    -- UPDATE TARGET INFO
+    spawn(function()
+        while targetInfo and targetInfo.Parent do
+            if CurrentTarget and IsAlive(CurrentTarget) then
+                local targetType = IsNPC(CurrentTarget) and "👹 NPC" or "👤 PLAYER"
+                local dist = TargetPart and math.floor((TargetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 0
+                local health = CurrentTarget:FindFirstChild("Humanoid") and math.floor(CurrentTarget.Humanoid.Health) or 0
+                targetLabel.Text = "🎯 " .. targetType .. " | " .. (CurrentTarget.Name or "Target") .. " | 📏 " .. dist .. "m | ❤️ " .. health
+                targetLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+            else
+                targetLabel.Text = "🎯 No Target Selected"
+                targetLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            end
+            task.wait(0.2)
+        end
+    end)
+    
+    -- Drag functionality
     local function MakeDraggable(frame)
         local dragFrame = false
         local dragStart, startPos
@@ -466,7 +567,6 @@ local function CreateUI()
                 local newX = startPos.X.Offset + delta.X
                 local newY = startPos.Y.Offset + delta.Y
                 frame.Position = UDim2.new(startPos.X.Scale, newX, startPos.Y.Scale, newY)
-                -- Juga pindahin panel lain
                 mainPanel.Position = UDim2.new(startPos.X.Scale, newX, startPos.Y.Scale, newY)
             end
         end)
@@ -481,19 +581,13 @@ local function CreateUI()
     MakeDraggable(minimizedBar)
     MakeDraggable(mainPanel)
     
-    -- Fungsi Minimize/Maximize
+    -- Minimize/Maximize functions
     local function MinimizeUI()
         if Settings.UIMinimized then return end
         Settings.UIMinimized = true
         mainPanel.Visible = false
         minimizedBar.Visible = true
-        -- Update posisi bar sama kayak panel
         minimizedBar.Position = mainPanel.Position
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "CENDOL HUB",
-            Text = "UI Minimized | Vol + to open",
-            Duration = 1
-        })
     end
     
     local function MaximizeUI()
@@ -502,120 +596,56 @@ local function CreateUI()
         mainPanel.Visible = true
         minimizedBar.Visible = false
         mainPanel.Position = minimizedBar.Position
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "CENDOL HUB",
-            Text = "UI Maximized | Vol - to close",
-            Duration = 1
-        })
     end
     
-    -- UPDATE INFO LOOP
-    spawn(function()
-        while mainPanel and mainPanel.Parent do
-            if CurrentTarget and IsAlive(CurrentTarget) then
-                local targetType = IsNPC(CurrentTarget) and "👹" or "👤"
-                local dist = TargetPart and math.floor((TargetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 0
-                targetLabel.Text = "🎯 " .. targetType .. " " .. (CurrentTarget.Name or "?") .. " (" .. dist .. "m)"
-                targetLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-            else
-                targetLabel.Text = "🎯 No Target"
-                targetLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-            end
-            task.wait(0.3)
-        end
+    -- Tombol minimize di main panel
+    local minimizeBtn = Instance.new("TextButton")
+    minimizeBtn.Size = UDim2.new(0, 32, 0, 32)
+    minimizeBtn.Position = UDim2.new(1, -40, 0, 4)
+    minimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+    minimizeBtn.BackgroundTransparency = 0.5
+    minimizeBtn.Text = "−"
+    minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    minimizeBtn.TextScaled = true
+    minimizeBtn.Font = Enum.Font.GothamBold
+    minimizeBtn.BorderSizePixel = 0
+    minimizeBtn.ZIndex = 10
+    
+    local btnCornerMini = Instance.new("UICorner")
+    btnCornerMini.CornerRadius = UDim.new(1, 0)
+    btnCornerMini.Parent = minimizeBtn
+    
+    minimizeBtn.MouseButton1Click:Connect(function()
+        MinimizeUI()
     end)
+    minimizeBtn.Parent = mainPanel
+    
+    -- Tombol maximize di minimized bar
+    local maximizeBtn = Instance.new("TextButton")
+    maximizeBtn.Size = UDim2.new(0, 32, 0, 32)
+    maximizeBtn.Position = UDim2.new(1, -40, 0, 4)
+    maximizeBtn.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+    maximizeBtn.BackgroundTransparency = 0.5
+    maximizeBtn.Text = "+"
+    maximizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    maximizeBtn.TextScaled = true
+    maximizeBtn.Font = Enum.Font.GothamBold
+    maximizeBtn.BorderSizePixel = 0
+    maximizeBtn.ZIndex = 10
+    
+    local btnCornerMax = Instance.new("UICorner")
+    btnCornerMax.CornerRadius = UDim.new(1, 0)
+    btnCornerMax.Parent = maximizeBtn
+    
+    maximizeBtn.MouseButton1Click:Connect(function()
+        MaximizeUI()
+    end)
+    maximizeBtn.Parent = minimizedBar
     
     mainPanel.Parent = sg
     minimizedBar.Parent = sg
     
-    -- Simpan references
-    UI.MainPanel = mainPanel
-    UI.MinimizedBar = minimizedBar
-    UI.Minimize = MinimizeUI
-    UI.Maximize = MaximizeUI
-    
     return {MinimizeUI, MaximizeUI}
-end
-
--- ========== VOLUME BUTTON CONTROLS ==========
-local function SetupVolumeControls(minimizeFunc, maximizeFunc)
-    -- Deteksi tombol volume Android
-    local VirtualInput = game:GetService("VirtualInputManager")
-    
-    -- Method 1: Pake UserInputService buat deteksi key (Volume up/down biasanya ga terdetek langsung, tapi kita pake fallback)
-    -- Method 2: Pake tombol di GUI juga sebagai backup
-    
-    -- Backup: Tambah tombol di minimized bar untuk maximize
-    -- Backup: Tambah tombol di main panel untuk minimize
-    
-    -- Kita tambah tombol minimize di main panel (icon -)
-    if UI.MainPanel then
-        local minimizeBtn = Instance.new("TextButton")
-        minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
-        minimizeBtn.Position = UDim2.new(1, -35, 0, 5)
-        minimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-        minimizeBtn.BackgroundTransparency = 0.5
-        minimizeBtn.Text = "−"
-        minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        minimizeBtn.TextScaled = true
-        minimizeBtn.Font = Enum.Font.GothamBold
-        minimizeBtn.BorderSizePixel = 0
-        minimizeBtn.ZIndex = 10
-        
-        local btnCorner = Instance.new("UICorner")
-        btnCorner.CornerRadius = UDim.new(1, 0)
-        btnCorner.Parent = minimizeBtn
-        
-        minimizeBtn.MouseButton1Click:Connect(function()
-            minimizeFunc()
-        end)
-        minimizeBtn.Parent = UI.MainPanel
-    end
-    
-    -- Tambah tombol maximize di minimized bar (icon +)
-    if UI.MinimizedBar then
-        local maximizeBtn = Instance.new("TextButton")
-        maximizeBtn.Size = UDim2.new(0, 30, 0, 30)
-        maximizeBtn.Position = UDim2.new(1, -35, 0, 2)
-        maximizeBtn.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
-        maximizeBtn.BackgroundTransparency = 0.5
-        maximizeBtn.Text = "+"
-        maximizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        maximizeBtn.TextScaled = true
-        maximizeBtn.Font = Enum.Font.GothamBold
-        maximizeBtn.BorderSizePixel = 0
-        maximizeBtn.ZIndex = 10
-        
-        local btnCorner = Instance.new("UICorner")
-        btnCorner.CornerRadius = UDim.new(1, 0)
-        btnCorner.Parent = maximizeBtn
-        
-        maximizeBtn.MouseButton1Click:Connect(function()
-            maximizeFunc()
-        end)
-        maximizeBtn.Parent = UI.MinimizedBar
-    end
-    
-    -- Fallback: Keyboard bind (untuk testing)
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        
-        -- Volume Down (biasanya KeyCode.VolumeDown)
-        if input.KeyCode == Enum.KeyCode.VolumeDown then
-            minimizeFunc()
-        end
-        
-        -- Volume Up
-        if input.KeyCode == Enum.KeyCode.VolumeUp then
-            maximizeFunc()
-        end
-    end)
-    
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "⚡ CENDOL HUB",
-        Text = "🔊 Vol - = Minimize | Vol + = Maximize",
-        Duration = 3
-    })
 end
 
 -- ========== MAIN LOOP ==========
@@ -636,12 +666,7 @@ RunService.RenderStepped:Connect(function()
             TargetPart = nil
         end
         
-        if Settings.CameraLock and CurrentTarget and TargetPart and TargetPart.Parent then
-            local targetPos = TargetPart.Position
-            local currentPos = Camera.CFrame.Position
-            Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(currentPos, targetPos), Settings.Smoothness)
-        end
-        
+        UpdateCameraFollow()
         RotateToTarget()
     end
     
@@ -652,10 +677,8 @@ end)
 spawn(function()
     wait(1)
     Crosshair = CreateCrosshair()
-    local uiFuncs = CreateUI()
-    if uiFuncs then
-        SetupVolumeControls(uiFuncs[1], uiFuncs[2])
-    end
-    print("=== CENDOL HUB VOLUME CONTROL LOADED ===")
+    CreateUI()
+    print("=== CENDOL HUB V2 LOADED ===")
+    print("=== Camera Follow Active | Enhanced UI ===")
 end)
 ]])()
