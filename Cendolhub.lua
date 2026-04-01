@@ -1,36 +1,42 @@
--- CENDOL HUB - ARCHITECT 03 EDITION
--- Lock-On System for Jujutsu Kaisen Shinenanigan
--- By: milanlan0073-alt
+-- CENDOL HUB - JUJUTSU SHENANIGANS
+-- Premium UI Edition | Draigón UI v2.0
+-- By: milanlan0073-alt | Powered by Architect 03
 
 loadstring([[
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
--- ========== CENDOL HUB CONFIG ==========
+-- ========== SETTINGS ==========
 local Settings = {
     Enabled = true,
     Keybind = "Q",
     AutoLock = true,
     MaxDistance = 150,
     TargetPriority = "Closest",
-    AutoAttack = false,
     SmoothCamera = true,
-    Smoothness = 0.3,
+    Smoothness = 0.35,
     ShowESP = true,
-    ESPColor = Color3.fromRGB(255, 0, 0),
-    HubName = "CENDOL HUB"
+    ESPColor = Color3.fromRGB(255, 50, 50),
+    RainbowESP = false,
+    ShowHealthBar = true
 }
 
+-- ========== VARIABLES ==========
 local CurrentTarget = nil
 local TargetPart = nil
 local ESPObjects = {}
+local UI = {}
+local RainbowHue = 0
 
-local Hitboxes = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart", "Torso"}
+-- ========== HITBOXES ==========
+local Hitboxes = {"Head", "UpperTorso", "HumanoidRootPart", "Torso"}
 
+-- ========== UTILITIES ==========
 local function IsAlive(c)
     if not c then return false end
     local h = c:FindFirstChild("Humanoid")
@@ -38,13 +44,15 @@ local function IsAlive(c)
 end
 
 local function GetDistance(a, b)
-    if not a or not b then return math.huge end
     return (a.Position - b.Position).Magnitude
 end
 
+-- ========== GET TARGETS ==========
 local function GetAllTargets()
     local targets = {}
-    local myPos = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local myChar = LocalPlayer.Character
+    if not myChar then return targets end
+    local myPos = myChar:FindFirstChild("HumanoidRootPart")
     if not myPos then return targets end
     
     for _, p in ipairs(Players:GetPlayers()) do
@@ -55,21 +63,15 @@ local function GetAllTargets()
                 if r then
                     local d = GetDistance(r, myPos)
                     if d <= Settings.MaxDistance then
-                        table.insert(targets, {Type="Player", Name=p.Name, Character=c, Root=r, Distance=d, Health=c.Humanoid.Health, MaxHealth=c.Humanoid.MaxHealth})
+                        table.insert(targets, {
+                            Character = c,
+                            Root = r,
+                            Distance = d,
+                            Health = c.Humanoid.Health,
+                            MaxHealth = c.Humanoid.MaxHealth,
+                            Name = p.Name
+                        })
                     end
-                end
-            end
-        end
-    end
-    
-    for _, o in ipairs(workspace:GetDescendants()) do
-        if o:IsA("Model") and o ~= LocalPlayer.Character then
-            local h = o:FindFirstChild("Humanoid")
-            local r = o:FindFirstChild("HumanoidRootPart")
-            if h and r and h.Health > 0 and not Players:GetPlayerFromCharacter(o) then
-                local d = GetDistance(r, myPos)
-                if d <= Settings.MaxDistance then
-                    table.insert(targets, {Type="NPC", Name=o.Name, Character=o, Root=r, Distance=d, Health=h.Health, MaxHealth=h.MaxHealth})
                 end
             end
         end
@@ -84,73 +86,124 @@ local function GetAllTargets()
     return targets
 end
 
-local function GetBestHitbox(c)
+local function GetBestHitbox(char)
     for _, h in ipairs(Hitboxes) do
-        local p = c:FindFirstChild(h)
-        if p and p:IsA("BasePart") then return p end
+        local part = char:FindFirstChild(h)
+        if part and part:IsA("BasePart") then return part end
     end
-    return c:FindFirstChild("HumanoidRootPart")
+    return char:FindFirstChild("HumanoidRootPart")
 end
 
-local function CreateESP(t)
+-- ========== ESP WITH RAINBOW ==========
+local function CreateESP(target)
     if not Settings.ShowESP then return end
-    if ESPObjects[t] then pcall(function() ESPObjects[t]:Destroy() end) end
-    local r = t:FindFirstChild("HumanoidRootPart")
-    if not r then return end
-    local b = Instance.new("BillboardGui")
-    b.Name = "CendolHub_ESP"
-    b.Size = UDim2.new(0, 80, 0, 30)
-    b.StudsOffset = Vector3.new(0, 2.5, 0)
-    b.AlwaysOnTop = true
-    b.Adornee = r
-    local f = Instance.new("Frame")
-    f.Size = UDim2.new(1,0,1,0)
-    f.BackgroundColor3 = Settings.ESPColor
-    f.BackgroundTransparency = 0.6
-    local hb = Instance.new("Frame")
-    hb.Size = UDim2.new(1,0,0.2,0)
-    hb.Position = UDim2.new(0,0,0.8,0)
-    hb.BackgroundColor3 = Color3.fromRGB(0,255,0)
-    hb.BackgroundTransparency = 0.3
-    local nl = Instance.new("TextLabel")
-    nl.Size = UDim2.new(1,0,0.6,0)
-    nl.Position = UDim2.new(0,0,0.2,0)
-    nl.BackgroundTransparency = 1
-    nl.TextColor3 = Color3.fromRGB(255,255,255)
-    nl.TextScaled = true
-    nl.Font = Enum.Font.GothamBold
-    nl.Text = t.Name or "?"
-    nl.Parent = f
-    hb.Parent = f
-    f.Parent = b
-    b.Parent = r
-    ESPObjects[t] = b
+    if ESPObjects[target] then pcall(function() ESPObjects[target]:Destroy() end) end
+    
+    local root = target:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    local espColor = Settings.ESPColor
+    if Settings.RainbowESP then
+        RainbowHue = (RainbowHue + 0.01) % 1
+        espColor = Color3.fromHSV(RainbowHue, 1, 1)
+    end
+    
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "CendolHub_ESP"
+    billboard.Size = UDim2.new(0, 100, 0, 40)
+    billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Adornee = root
+    
+    -- Main Frame
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(1, 0, 1, 0)
+    mainFrame.BackgroundTransparency = 1
+    
+    -- Name Label
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(1, 0, 0.4, 0)
+    nameLabel.Position = UDim2.new(0, 0, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLabel.TextStrokeTransparency = 0.3
+    nameLabel.TextScaled = true
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.Text = target.Name or "?"
+    
+    -- Health Bar
+    local healthFrame = Instance.new("Frame")
+    healthFrame.Size = UDim2.new(1, 0, 0.25, 0)
+    healthFrame.Position = UDim2.new(0, 0, 0.45, 0)
+    healthFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    healthFrame.BorderSizePixel = 0
+    
+    local healthFill = Instance.new("Frame")
+    healthFill.Size = UDim2.new(1, 0, 1, 0)
+    healthFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    healthFill.BorderSizePixel = 0
+    
+    -- Distance Label
+    local distLabel = Instance.new("TextLabel")
+    distLabel.Size = UDim2.new(1, 0, 0.25, 0)
+    distLabel.Position = UDim2.new(0, 0, 0.75, 0)
+    distLabel.BackgroundTransparency = 1
+    distLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    distLabel.TextScaled = true
+    distLabel.Font = Enum.Font.Gotham
+    distLabel.Text = math.floor(GetDistance(root, LocalPlayer.Character.HumanoidRootPart)) .. "m"
+    
+    -- Outline Effect
+    local outline = Instance.new("UICorner")
+    outline.CornerRadius = UDim.new(0, 4)
+    
+    healthFill.Parent = healthFrame
+    healthFrame.Parent = mainFrame
+    nameLabel.Parent = mainFrame
+    distLabel.Parent = mainFrame
+    mainFrame.Parent = billboard
+    billboard.Parent = root
+    
+    ESPObjects[target] = {billboard, healthFill, distLabel}
+    
+    -- Update health bar color based on HP
+    local hpPercent = target.Humanoid.Health / target.Humanoid.MaxHealth
+    healthFill.BackgroundColor3 = Color3.fromRGB(255 * (1 - hpPercent), 255 * hpPercent, 0)
 end
 
 local function UpdateESP()
-    for t, e in pairs(ESPObjects) do
-        if not t or not t.Parent or not IsAlive(t) then
-            pcall(function() e:Destroy() end)
-            ESPObjects[t] = nil
-        elseif IsAlive(t) and e then
-            local f = e:FindFirstChild("Frame")
-            if f then
-                local hb = f:FindFirstChild("Frame")
-                if hb then
-                    local hp = t.Humanoid.Health / t.Humanoid.MaxHealth
-                    hb.Size = UDim2.new(hp, 0, 0.2, 0)
-                    hb.BackgroundColor3 = Color3.fromRGB(255 * (1 - hp), 255 * hp, 0)
+    for target, data in pairs(ESPObjects) do
+        if not target or not target.Parent or not IsAlive(target) then
+            pcall(function() data[1]:Destroy() end)
+            ESPObjects[target] = nil
+        elseif IsAlive(target) and data then
+            local root = target:FindFirstChild("HumanoidRootPart")
+            if root and data[3] then
+                local dist = math.floor(GetDistance(root, LocalPlayer.Character.HumanoidRootPart))
+                data[3].Text = dist .. "m"
+            end
+            if Settings.ShowHealthBar and data[2] then
+                local hpPercent = target.Humanoid.Health / target.Humanoid.MaxHealth
+                data[2].Size = UDim2.new(hpPercent, 0, 1, 0)
+                data[2].BackgroundColor3 = Color3.fromRGB(255 * (1 - hpPercent), 255 * hpPercent, 0)
+            end
+            if Settings.RainbowESP and data[1] then
+                RainbowHue = (RainbowHue + 0.01) % 1
+                local frame = data[1]:FindFirstChild("Frame")
+                if frame then
+                    frame.BackgroundColor3 = Color3.fromHSV(RainbowHue, 1, 1)
                 end
             end
         end
     end
 end
 
+-- ========== LOCK-ON CORE ==========
 local function FindBestTarget()
-    local t = GetAllTargets()
-    if #t > 0 then
-        local b = t[1]
-        return b.Character, GetBestHitbox(b.Character)
+    local targets = GetAllTargets()
+    if #targets > 0 then
+        local best = targets[1]
+        return best.Character, GetBestHitbox(best.Character)
     end
     return nil, nil
 end
@@ -161,27 +214,26 @@ local function UpdateLockOn()
         if Settings.AutoLock then
             CurrentTarget, TargetPart = FindBestTarget()
             if CurrentTarget then CreateESP(CurrentTarget) end
-        else
-            CurrentTarget, TargetPart = nil, nil
         end
     end
 end
 
-local function SmoothLock(dt)
-    if not Settings.Enabled or not TargetPart or not TargetPart.Parent then
-        if not TargetPart then CurrentTarget = nil end
-        return
-    end
-    local tp = TargetPart.Position
-    local cp = Camera.CFrame.Position
+local function SmoothLock()
+    if not Settings.Enabled or not TargetPart or not TargetPart.Parent then return end
+    
+    local targetPos = TargetPart.Position
+    local currentPos = Camera.CFrame.Position
+    
     if Settings.SmoothCamera then
-        Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(cp, tp), Settings.Smoothness)
+        local newCFrame = CFrame.new(currentPos, targetPos)
+        Camera.CFrame = Camera.CFrame:Lerp(newCFrame, Settings.Smoothness)
     else
-        Camera.CFrame = CFrame.new(cp, tp)
+        Camera.CFrame = CFrame.new(currentPos, targetPos)
     end
 end
 
-local KeyMap = {Q=Enum.KeyCode.Q, E=Enum.KeyCode.E, R=Enum.KeyCode.R, F=Enum.KeyCode.F, G=Enum.KeyCode.G}
+-- ========== KEYBIND ==========
+local KeyMap = {Q=Enum.KeyCode.Q, E=Enum.KeyCode.E, R=Enum.KeyCode.R, F=Enum.KeyCode.F}
 UserInputService.InputBegan:Connect(function(i, g)
     if g then return end
     local k = KeyMap[Settings.Keybind]
@@ -190,49 +242,286 @@ UserInputService.InputBegan:Connect(function(i, g)
         if not Settings.Enabled then
             CurrentTarget = nil
             TargetPart = nil
-            for _, e in pairs(ESPObjects) do pcall(function() e:Destroy() end) end
+            for _, data in pairs(ESPObjects) do
+                pcall(function() data[1]:Destroy() end)
+            end
             ESPObjects = {}
         end
-        game:GetService("StarterGui"):SetCore("SendNotification", {Title="CENDOL HUB", Text=Settings.Enabled and "LOCK-ON ACTIVE" or "LOCK-ON OFF", Duration=1})
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "⚔️ CENDOL HUB",
+            Text = Settings.Enabled and "🔴 LOCK-ON ACTIVE" or "⚫ LOCK-ON OFF",
+            Duration = 1.5
+        })
+        if UI.ToggleButton then
+            UI.ToggleButton.Text = Settings.Enabled and "▶ ACTIVE" or "⏸ OFF"
+            UI.ToggleButton.TextColor3 = Settings.Enabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 50, 50)
+        end
     end
 end)
 
-RunService.RenderStepped:Connect(function(dt)
+-- ========== PREMIUM UI ==========
+local function CreateUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "CendolHubUI"
+    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    screenGui.ResetOnSpawn = false
+    
+    -- Main Container
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(0, 280, 0, 380)
+    container.Position = UDim2.new(0, 15, 0, 100)
+    container.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+    container.BackgroundTransparency = 0.1
+    container.BorderSizePixel = 0
+    container.ClipsDescendants = true
+    
+    -- Shadow
+    local shadow = Instance.new("Frame")
+    shadow.Size = UDim2.new(1, 10, 1, 10)
+    shadow.Position = UDim2.new(0, -5, 0, -5)
+    shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    shadow.BackgroundTransparency = 0.7
+    shadow.BorderSizePixel = 0
+    shadow.Parent = container
+    
+    -- Corner Radius
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    container:AddTag("UICorner")
+    pcall(function() container.UICorner = corner end)
+    
+    -- Header
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, 60)
+    header.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    header.BackgroundTransparency = 0.85
+    header.BorderSizePixel = 0
+    
+    local headerCorner = Instance.new("UICorner")
+    headerCorner.CornerRadius = UDim.new(0, 12)
+    header.Parent = header
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 1, 0)
+    title.Text = "⚡ CENDOL HUB ⚡"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.BackgroundTransparency = 1
+    title.TextScaled = true
+    title.Font = Enum.Font.GothamBold
+    title.Parent = header
+    
+    local subtitle = Instance.new("TextLabel")
+    subtitle.Size = UDim2.new(1, 0, 0.3, 0)
+    subtitle.Position = UDim2.new(0, 0, 0.7, 0)
+    subtitle.Text = "JUJUTSU SHENANIGANS"
+    subtitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+    subtitle.BackgroundTransparency = 1
+    subtitle.TextScaled = true
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.Parent = header
+    
+    -- Content
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1, 0, 1, -70)
+    content.Position = UDim2.new(0, 0, 0, 70)
+    content.BackgroundTransparency = 1
+    content.Parent = container
+    
+    -- Toggle Button
+    local toggleBtn = Instance.new("TextButton")
+    toggleBtn.Size = UDim2.new(0.9, 0, 0, 50)
+    toggleBtn.Position = UDim2.new(0.05, 0, 0.05, 0)
+    toggleBtn.BackgroundColor3 = Settings.Enabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(150, 50, 50)
+    toggleBtn.Text = Settings.Enabled and "▶ ACTIVE" or "⏸ OFF"
+    toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleBtn.TextScaled = true
+    toggleBtn.Font = Enum.Font.GothamBold
+    toggleBtn.BorderSizePixel = 0
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 8)
+    toggleBtn.Parent = toggleBtn
+    
+    toggleBtn.MouseButton1Click:Connect(function()
+        Settings.Enabled = not Settings.Enabled
+        toggleBtn.Text = Settings.Enabled and "▶ ACTIVE" or "⏸ OFF"
+        toggleBtn.BackgroundColor3 = Settings.Enabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(150, 50, 50)
+        if not Settings.Enabled then
+            CurrentTarget = nil
+            TargetPart = nil
+            for _, data in pairs(ESPObjects) do
+                pcall(function() data[1]:Destroy() end)
+            end
+            ESPObjects = {}
+        end
+    end)
+    
+    -- Keybind Display
+    local keyFrame = Instance.new("Frame")
+    keyFrame.Size = UDim2.new(0.9, 0, 0, 45)
+    keyFrame.Position = UDim2.new(0.05, 0, 0.2, 0)
+    keyFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    keyFrame.BackgroundTransparency = 0.5
+    keyFrame.BorderSizePixel = 0
+    
+    local keyCorner = Instance.new("UICorner")
+    keyCorner.CornerRadius = UDim.new(0, 8)
+    keyFrame.Parent = keyFrame
+    
+    local keyText = Instance.new("TextLabel")
+    keyText.Size = UDim2.new(1, 0, 1, 0)
+    keyText.Text = "🔘 TOGGLE KEY: " .. Settings.Keybind
+    keyText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    keyText.BackgroundTransparency = 1
+    keyText.TextScaled = true
+    keyText.Font = Enum.Font.Gotham
+    keyText.Parent = keyFrame
+    
+    -- Distance Slider
+    local distLabel = Instance.new("TextLabel")
+    distLabel.Size = UDim2.new(0.9, 0, 0, 25)
+    distLabel.Position = UDim2.new(0.05, 0, 0.35, 0)
+    distLabel.Text = "📏 MAX DISTANCE: " .. Settings.MaxDistance .. "m"
+    distLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    distLabel.BackgroundTransparency = 1
+    distLabel.TextScaled = true
+    distLabel.Font = Enum.Font.Gotham
+    distLabel.Parent = content
+    
+    -- Status Display
+    local statusFrame = Instance.new("Frame")
+    statusFrame.Size = UDim2.new(0.9, 0, 0, 60)
+    statusFrame.Position = UDim2.new(0.05, 0, 0.45, 0)
+    statusFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+    statusFrame.BackgroundTransparency = 0.3
+    statusFrame.BorderSizePixel = 0
+    
+    local statusCorner = Instance.new("UICorner")
+    statusCorner.CornerRadius = UDim.new(0, 8)
+    statusFrame.Parent = statusFrame
+    
+    local targetStatus = Instance.new("TextLabel")
+    targetStatus.Size = UDim2.new(1, 0, 0.5, 0)
+    targetStatus.Position = UDim2.new(0, 0, 0, 0)
+    targetStatus.Text = "🎯 TARGET: None"
+    targetStatus.TextColor3 = Color3.fromRGB(255, 200, 100)
+    targetStatus.BackgroundTransparency = 1
+    targetStatus.TextScaled = true
+    targetStatus.Font = Enum.Font.Gotham
+    targetStatus.Parent = statusFrame
+    
+    local lockStatus = Instance.new("TextLabel")
+    lockStatus.Size = UDim2.new(1, 0, 0.5, 0)
+    lockStatus.Position = UDim2.new(0, 0, 0.5, 0)
+    lockStatus.Text = "🔒 STATUS: " .. (Settings.Enabled and "LOCKED" or "OFF")
+    lockStatus.TextColor3 = Settings.Enabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100)
+    lockStatus.BackgroundTransparency = 1
+    lockStatus.TextScaled = true
+    lockStatus.Font = Enum.Font.Gotham
+    lockStatus.Parent = statusFrame
+    
+    -- Footer
+    local footer = Instance.new("TextLabel")
+    footer.Size = UDim2.new(1, 0, 0, 30)
+    footer.Position = UDim2.new(0, 0, 1, -30)
+    footer.Text = "© milanlan0073-alt | Architect 03"
+    footer.TextColor3 = Color3.fromRGB(100, 100, 100)
+    footer.BackgroundTransparency = 1
+    footer.TextScaled = true
+    footer.Font = Enum.Font.Gotham
+    footer.Parent = container
+    
+    -- Assemble
+    header.Parent = container
+    toggleBtn.Parent = content
+    keyFrame.Parent = content
+    distLabel.Parent = content
+    statusFrame.Parent = content
+    footer.Parent = container
+    container.Parent = screenGui
+    
+    -- Store references
+    UI.ToggleButton = toggleBtn
+    UI.TargetStatus = targetStatus
+    UI.LockStatus = lockStatus
+    UI.DistLabel = distLabel
+    UI.Container = container
+    
+    -- Update loop for UI
+    spawn(function()
+        while container and container.Parent do
+            if UI.TargetStatus then
+                if CurrentTarget and IsAlive(CurrentTarget) then
+                    local dist = TargetPart and math.floor((TargetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 0
+                    UI.TargetStatus.Text = "🎯 TARGET: " .. (CurrentTarget.Name or "Unknown") .. " (" .. dist .. "m)"
+                else
+                    UI.TargetStatus.Text = "🎯 TARGET: None"
+                end
+                UI.LockStatus.Text = "🔒 STATUS: " .. (Settings.Enabled and "LOCKED" or "OFF")
+                UI.LockStatus.TextColor3 = Settings.Enabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100)
+                UI.DistLabel.Text = "📏 MAX DISTANCE: " .. Settings.MaxDistance .. "m"
+            end
+            task.wait(0.3)
+        end
+    end)
+    
+    -- Draggable
+    local dragging = false
+    local dragStart, startPos
+    
+    container.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = container.Position
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local delta = input.Position - dragStart
+            container.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+end
+
+-- ========== INITIALIZE ==========
+spawn(function()
+    wait(1)
+    pcall(CreateUI)
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "⚡ CENDOL HUB",
+        Text = "Premium UI Loaded | Press " .. Settings.Keybind .. " to toggle",
+        Duration = 3
+    })
+    print("=== CENDOL HUB PREMIUM LOADED ===")
+end)
+
+-- Main Loop
+RunService.RenderStepped:Connect(function()
     if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
     UpdateLockOn()
     UpdateESP()
     if Settings.Enabled and TargetPart then
-        SmoothLock(dt)
+        SmoothLock()
     end
 end)
 
-local function CreateGUI()
-    local sg = Instance.new("ScreenGui")
-    sg.Name = "CendolHub"
-    sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
-    local f = Instance.new("Frame")
-    f.Size = UDim2.new(0,220,0,120)
-    f.Position = UDim2.new(0,10,0,10)
-    f.BackgroundColor3 = Color3.fromRGB(0,0,0)
-    f.BackgroundTransparency = 0.5
-    f.BorderSizePixel = 0
-    local t = Instance.new("TextLabel")
-    t.Size = UDim2.new(1,0,1,0)
-    t.Text = "CENDOL HUB\n" .. (Settings.Enabled and "ACTIVE" or "INACTIVE") .. "\nKey: " .. Settings.Keybind
-    t.TextColor3 = Settings.Enabled and Color3.fromRGB(0,255,0) or Color3.fromRGB(255,0,0)
-    t.BackgroundTransparency = 1
-    t.TextScaled = true
-    t.Font = Enum.Font.GothamBold
-    t.Parent = f
-    f.Parent = sg
-    while f and f.Parent do
-        task.wait(0.5)
-        t.Text = "CENDOL HUB\n" .. (Settings.Enabled and "ACTIVE" or "INACTIVE") .. "\nKey: " .. Settings.Keybind
-        t.TextColor3 = Settings.Enabled and Color3.fromRGB(0,255,0) or Color3.fromRGB(255,0,0)
-    end
+-- Rainbow ESP Update
+if Settings.RainbowESP then
+    spawn(function()
+        while true do
+            task.wait(0.05)
+            if Settings.RainbowESP then
+                RainbowHue = (RainbowHue + 0.005) % 1
+            end
+        end
+    end)
 end
-
-spawn(function() wait(1) pcall(CreateGUI) end)
-game:GetService("StarterGui"):SetCore("SendNotification", {Title="CENDOL HUB", Text="Lock-On Loaded | Press " .. Settings.Keybind .. " to toggle", Duration=3})
-print("=== CENDOL HUB LOADED ===")
 ]])()
