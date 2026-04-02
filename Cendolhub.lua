@@ -1,12 +1,14 @@
--- CENDOL HUB V2 - ENHANCED CAMERA & UI
--- Camera Follow | Crosshair | Body Rotate
--- By: milanlan0073-alt
+-- CENDOL HUB V2 - ENHANCED CAMERA & UI + AUTO BLOCK + AUTO COUNTER (Restless Gambler)
+-- Camera Follow | Crosshair | Body Rotate | Auto Block | Auto Counter (Hakari)
+-- By: milanlan0073-alt + Addon by Architect03
 
 loadstring([[
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
@@ -20,13 +22,21 @@ local Settings = {
     BodyRotate = true,
     MaxDistance = 200,
     CameraOffset = Vector3.new(0, 2, 0),
-    UIMinimized = false
+    UIMinimized = false,
+    AutoBlock = true,
+    AutoCounter = true,      -- AUTO COUNTER FITUR (Restless Gambler)
+    CounterKey = Enum.KeyCode.R, -- Tombol counter (R untuk special)
+    FeverCheck = true        -- Cek apakah fever mode aktif
 }
 
 local CurrentTarget = nil
 local TargetPart = nil
 local Crosshair = nil
 local UI = {}
+local IsBlocking = false
+local IsCountering = false
+local LastCounterTime = 0
+local CounterCooldown = 1.5 -- Cooldown 1.5 detik
 
 -- HITBOXES (prioritas)
 local Hitboxes = {"Head", "UpperTorso", "HumanoidRootPart", "Torso"}
@@ -58,7 +68,7 @@ local function GetDistance(a, b)
     return (a.Position - b.Position).Magnitude
 end
 
--- GET TARGET TERDEKAT (OPTIMIZED)
+-- GET TARGET TERDEKAT
 local function GetClosestTarget()
     local closest = nil
     local closestDist = Settings.MaxDistance
@@ -114,7 +124,225 @@ local function GetBestHitbox(char)
     return char:FindFirstChild("HumanoidRootPart")
 end
 
--- BODY ROTATION
+-- ========== RESTLESS GAMBLER (HAKARI) SPECIFIC FUNCTIONS ==========
+local function IsFeverModeActive()
+    if not Settings.FeverCheck then return true end
+    
+    -- Cek status fever dari UI atau attribute
+    local playerGui = LocalPlayer.PlayerGui
+    if playerGui then
+        -- Cari indikator fever (biasanya ada frame khusus)
+        for _, gui in pairs(playerGui:GetChildren()) do
+            if gui:IsA("Frame") and (gui.Name:lower():find("fever") or gui.Name:lower():find("gambler")) then
+                if gui.Visible then
+                    return true
+                end
+            end
+        end
+    end
+    
+    -- Cek attribute di character
+    local char = LocalPlayer.Character
+    if char then
+        local feverAttr = char:FindFirstChild("FeverActive")
+        if feverAttr and feverAttr.Value then
+            return true
+        end
+    end
+    
+    -- Default return true biar tetep jalan
+    return true
+end
+
+local function GetRoughEnergyStacks()
+    -- Ambil jumlah stack Rough Energy (untuk damage counter)
+    local char = LocalPlayer.Character
+    if char then
+        local stacks = char:FindFirstChild("RoughEnergyStacks")
+        if stacks then
+            return stacks.Value
+        end
+    end
+    return 0
+end
+
+-- ========== AUTO COUNTER SYSTEM (RESTLESS GAMBLER) ==========
+local function IsEnemyAttackingForCounter(character)
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return false end
+    
+    local animator = humanoid:FindFirstChild("Animator")
+    if not animator then return false end
+    
+    -- Deteksi animasi attack yang bisa di-counter
+    for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+        local animId = track.Animation.AnimationId:lower()
+        local attackKeywords = {"attack", "punch", "kick", "combo", "melee", "strike", "blackflash", "cursed"}
+        for _, keyword in ipairs(attackKeywords) do
+            if animId:find(keyword) then
+                local speed = track.TimePosition / (track.Length or 1)
+                -- Counter pas musuh di tengah animasi attack (0.2 - 0.7)
+                if speed > 0.2 and speed < 0.7 then
+                    return true
+                end
+            end
+        end
+    end
+    
+    -- Deteksi berdasarkan jarak dan gerakan
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local targetRoot = character:FindFirstChild("HumanoidRootPart")
+    
+    if myRoot and targetRoot then
+        local distance = (myRoot.Position - targetRoot.Position).Magnitude
+        local prevPos = character:GetAttribute("LastPosition") or targetRoot.Position
+        local currentPos = targetRoot.Position
+        local velocity = (currentPos - prevPos).Magnitude
+        character:SetAttribute("LastPosition", currentPos)
+        
+        -- Musuh bergerak cepat ke arah player (attack dash)
+        local toTarget = (myRoot.Position - targetRoot.Position).Unit
+        local moveDir = (currentPos - prevPos).Unit
+        local dot = toTarget:Dot(moveDir)
+        
+        if distance < 12 and velocity > 5 and dot > 0.5 then
+            return true
+        end
+    end
+    
+    return false
+end
+
+local function PerformCounter()
+    if not Settings.AutoCounter then return end
+    if IsCountering then return end
+    
+    local currentTime = tick()
+    if currentTime - LastCounterTime < CounterCooldown then return end
+    
+    -- Cek apakah fever mode aktif
+    if not IsFeverModeActive() then
+        -- Kalo ga fever, counter lebih lemah tapi tetep bisa
+    end
+    
+    local stacks = GetRoughEnergyStacks()
+    
+    -- Simulate counter key press (R untuk special ability Restless Gambler)
+    VirtualInputManager:SendKeyEvent(true, Settings.CounterKey, false, game)
+    IsCountering = true
+    LastCounterTime = currentTime
+    
+    -- Tahan sebentar biar counter ke-register
+    task.delay(0.15, function()
+        if IsCountering then
+            VirtualInputManager:SendKeyEvent(false, Settings.CounterKey, false, game)
+            IsCountering = false
+        end
+    end)
+    
+    -- Visual feedback (console)
+    print("[COUNTER] Executed! Rough Energy Stacks: " .. stacks)
+end
+
+-- ========== AUTO BLOCK SYSTEM ==========
+local function GetBlockKey()
+    return Enum.KeyCode.F
+end
+
+local function IsEnemyAttacking(character)
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return false end
+    
+    local animator = humanoid:FindFirstChild("Animator")
+    if not animator then return false end
+    
+    for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+        local animId = track.Animation.AnimationId:lower()
+        if animId:find("attack") or animId:find("punch") or animId:find("kick") or animId:find("combo") or animId:find("melee") then
+            return true
+        end
+    end
+    
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local targetRoot = character:FindFirstChild("HumanoidRootPart")
+    
+    if myRoot and targetRoot then
+        local distance = (myRoot.Position - targetRoot.Position).Magnitude
+        local targetCF = character:GetPivot()
+        local toTarget = (myRoot.Position - targetRoot.Position).Unit
+        local lookVector = targetCF.LookVector
+        local dot = lookVector:Dot(toTarget)
+        
+        if dot > 0.6 and distance < 8 then
+            return true
+        end
+    end
+    
+    return false
+end
+
+local function PerformBlock()
+    if not Settings.AutoBlock then return end
+    if IsBlocking then return end
+    
+    local blockKey = GetBlockKey()
+    VirtualInputManager:SendKeyEvent(true, blockKey, false, game)
+    IsBlocking = true
+    
+    task.delay(0.3, function()
+        if IsBlocking then
+            VirtualInputManager:SendKeyEvent(false, blockKey, false, game)
+            IsBlocking = false
+        end
+    end)
+end
+
+local function ReleaseBlock()
+    if not IsBlocking then return end
+    local blockKey = GetBlockKey()
+    VirtualInputManager:SendKeyEvent(false, blockKey, false, game)
+    IsBlocking = false
+end
+
+-- Auto Block & Counter Loop
+spawn(function()
+    while true do
+        task.wait(0.08)
+        if Settings.Enabled and CurrentTarget and IsAlive(CurrentTarget) then
+            local isAttacking = IsEnemyAttacking(CurrentTarget)
+            local isAttackingForCounter = IsEnemyAttackingForCounter(CurrentTarget)
+            
+            -- Priority: Counter > Block
+            if Settings.AutoCounter and isAttackingForCounter then
+                PerformCounter()
+            elseif Settings.AutoBlock and isAttacking then
+                PerformBlock()
+            elseif IsBlocking then
+                ReleaseBlock()
+            end
+        elseif IsBlocking then
+            ReleaseBlock()
+        end
+    end
+end)
+
+-- ========== ENHANCED CAMERA FOLLOW ==========
+local function UpdateCameraFollow()
+    if not Settings.CameraFollow then return end
+    if not CurrentTarget or not IsAlive(CurrentTarget) then return end
+    if not TargetPart or not TargetPart.Parent then return end
+    
+    local targetPos = TargetPart.Position + Settings.CameraOffset
+    local currentCFrame = Camera.CFrame
+    local desiredCFrame = CFrame.new(currentCFrame.Position, targetPos)
+    
+    local newCFrame = currentCFrame:Lerp(desiredCFrame, Settings.CameraSmoothness)
+    Camera.CFrame = newCFrame
+end
+
+-- ========== BODY ROTATION ==========
 local function RotateToTarget()
     if not Settings.BodyRotate then return end
     if not CurrentTarget or not IsAlive(CurrentTarget) then return end
@@ -129,22 +357,7 @@ local function RotateToTarget()
     myChar:SetPrimaryPartCFrame(lookAt)
 end
 
--- ========== ENHANCED CAMERA FOLLOW ==========
-local function UpdateCameraFollow()
-    if not Settings.CameraFollow then return end
-    if not CurrentTarget or not IsAlive(CurrentTarget) then return end
-    if not TargetPart or not TargetPart.Parent then return end
-    
-    local targetPos = TargetPart.Position + Settings.CameraOffset
-    local currentCFrame = Camera.CFrame
-    local desiredCFrame = CFrame.new(currentCFrame.Position, targetPos)
-    
-    -- Smooth interpolation
-    local newCFrame = currentCFrame:Lerp(desiredCFrame, Settings.CameraSmoothness)
-    Camera.CFrame = newCFrame
-end
-
--- ========== CROSSHAIR ENHANCED ==========
+-- ========== CROSSHAIR ==========
 local function CreateCrosshair()
     for i = 1, 10 do
         if LocalPlayer:FindFirstChild("PlayerGui") then break end
@@ -157,7 +370,6 @@ local function CreateCrosshair()
     sg.ResetOnSpawn = false
     sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
-    -- Outer circle
     local outer = Instance.new("Frame")
     outer.Size = UDim2.new(0, 44, 0, 44)
     outer.Position = UDim2.new(0.5, -22, 0.5, -22)
@@ -170,7 +382,6 @@ local function CreateCrosshair()
     outerCorner.CornerRadius = UDim.new(1, 0)
     outerCorner.Parent = outer
     
-    -- Inner circle
     local inner = Instance.new("Frame")
     inner.Size = UDim2.new(0, 24, 0, 24)
     inner.Position = UDim2.new(0.5, -12, 0.5, -12)
@@ -183,7 +394,6 @@ local function CreateCrosshair()
     innerCorner.CornerRadius = UDim.new(1, 0)
     innerCorner.Parent = inner
     
-    -- Center dot
     local dot = Instance.new("Frame")
     dot.Size = UDim2.new(0, 6, 0, 6)
     dot.Position = UDim2.new(0.5, -3, 0.5, -3)
@@ -195,7 +405,6 @@ local function CreateCrosshair()
     dotCorner.CornerRadius = UDim.new(1, 0)
     dotCorner.Parent = dot
     
-    -- Target info panel
     local targetPanel = Instance.new("Frame")
     targetPanel.Size = UDim2.new(0, 280, 0, 60)
     targetPanel.Position = UDim2.new(0.5, -140, 0.5, 80)
@@ -264,7 +473,7 @@ local function UpdateCrosshair()
     end
 end
 
--- ========== ENHANCED UI (LEBAR & RAPIH) ==========
+-- ========== UI ==========
 local function CreateUI()
     for i = 1, 10 do
         if LocalPlayer:FindFirstChild("PlayerGui") then break end
@@ -277,9 +486,8 @@ local function CreateUI()
     sg.ResetOnSpawn = false
     sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
-    -- MAIN PANEL (LEBAR)
     local mainPanel = Instance.new("Frame")
-    mainPanel.Size = UDim2.new(0, 300, 0, 280)
+    mainPanel.Size = UDim2.new(0, 300, 0, 400)
     mainPanel.Position = UDim2.new(0, 15, 0, 80)
     mainPanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     mainPanel.BackgroundTransparency = 0.3
@@ -291,14 +499,12 @@ local function CreateUI()
     panelCorner.CornerRadius = UDim.new(0, 16)
     panelCorner.Parent = mainPanel
     
-    -- GLOW EFFECT
     local uiStroke = Instance.new("UIStroke")
     uiStroke.Color = Color3.fromRGB(255, 80, 80)
     uiStroke.Thickness = 1
     uiStroke.Transparency = 0.7
     uiStroke.Parent = mainPanel
     
-    -- Title Bar
     local titleBar = Instance.new("Frame")
     titleBar.Size = UDim2.new(1, 0, 0, 40)
     titleBar.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
@@ -312,7 +518,7 @@ local function CreateUI()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, -40, 1, 0)
     title.Position = UDim2.new(0, 10, 0, 0)
-    title.Text = "⚡ CENDOL HUB V2"
+    title.Text = "⚡ CENDOL HUB V2 | HAKARI COUNTER"
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
     title.BackgroundTransparency = 1
     title.TextScaled = true
@@ -320,15 +526,14 @@ local function CreateUI()
     title.Font = Enum.Font.GothamBold
     title.Parent = titleBar
     
-    -- Content
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1, -20, 1, -50)
     content.Position = UDim2.new(0, 10, 0, 45)
     content.BackgroundTransparency = 1
     
-    -- Lock ON/OFF (Big Button)
+    -- Lock ON/OFF
     local lockBtn = Instance.new("TextButton")
-    lockBtn.Size = UDim2.new(1, 0, 0, 45)
+    lockBtn.Size = UDim2.new(1, 0, 0, 40)
     lockBtn.Position = UDim2.new(0, 0, 0, 0)
     lockBtn.BackgroundColor3 = Settings.Enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 50, 50)
     lockBtn.Text = Settings.Enabled and "🔒 LOCK ACTIVE" or "🔓 LOCK OFF"
@@ -357,10 +562,9 @@ local function CreateUI()
     -- Toggle Row (Player & NPC)
     local toggleRow = Instance.new("Frame")
     toggleRow.Size = UDim2.new(1, 0, 0, 40)
-    toggleRow.Position = UDim2.new(0, 0, 0, 55)
+    toggleRow.Position = UDim2.new(0, 0, 0, 50)
     toggleRow.BackgroundTransparency = 1
     
-    -- Lock Player Toggle
     local playerBtn = Instance.new("TextButton")
     playerBtn.Size = UDim2.new(0.48, 0, 1, 0)
     playerBtn.Position = UDim2.new(0, 0, 0, 0)
@@ -381,7 +585,6 @@ local function CreateUI()
         if Settings.Enabled then CurrentTarget = nil end
     end)
     
-    -- Lock NPC Toggle
     local npcBtn = Instance.new("TextButton")
     npcBtn.Size = UDim2.new(0.48, 0, 1, 0)
     npcBtn.Position = UDim2.new(0.52, 0, 0, 0)
@@ -408,7 +611,7 @@ local function CreateUI()
     -- Body Rotate Toggle
     local rotateBtn = Instance.new("TextButton")
     rotateBtn.Size = UDim2.new(1, 0, 0, 40)
-    rotateBtn.Position = UDim2.new(0, 0, 0, 105)
+    rotateBtn.Position = UDim2.new(0, 0, 0, 100)
     rotateBtn.BackgroundColor3 = Settings.BodyRotate and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
     rotateBtn.Text = Settings.BodyRotate and "🔄 BODY ROTATE: ON" or "🔄 BODY ROTATE: OFF"
     rotateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -429,7 +632,7 @@ local function CreateUI()
     -- Camera Follow Toggle
     local cameraBtn = Instance.new("TextButton")
     cameraBtn.Size = UDim2.new(1, 0, 0, 40)
-    cameraBtn.Position = UDim2.new(0, 0, 0, 155)
+    cameraBtn.Position = UDim2.new(0, 0, 0, 150)
     cameraBtn.BackgroundColor3 = Settings.CameraFollow and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
     cameraBtn.Text = Settings.CameraFollow and "📷 CAMERA FOLLOW: ON" or "📷 CAMERA FOLLOW: OFF"
     cameraBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -447,10 +650,53 @@ local function CreateUI()
         cameraBtn.BackgroundColor3 = Settings.CameraFollow and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
     end)
     
+    -- AUTO BLOCK Toggle
+    local autoBlockBtn = Instance.new("TextButton")
+    autoBlockBtn.Size = UDim2.new(1, 0, 0, 40)
+    autoBlockBtn.Position = UDim2.new(0, 0, 0, 200)
+    autoBlockBtn.BackgroundColor3 = Settings.AutoBlock and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
+    autoBlockBtn.Text = Settings.AutoBlock and "🛡️ AUTO BLOCK: ON" or "🛡️ AUTO BLOCK: OFF"
+    autoBlockBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    autoBlockBtn.TextScaled = true
+    autoBlockBtn.Font = Enum.Font.GothamBold
+    autoBlockBtn.BorderSizePixel = 0
+    
+    local autoBlockCorner = Instance.new("UICorner")
+    autoBlockCorner.CornerRadius = UDim.new(0, 10)
+    autoBlockCorner.Parent = autoBlockBtn
+    
+    autoBlockBtn.MouseButton1Click:Connect(function()
+        Settings.AutoBlock = not Settings.AutoBlock
+        autoBlockBtn.Text = Settings.AutoBlock and "🛡️ AUTO BLOCK: ON" or "🛡️ AUTO BLOCK: OFF"
+        autoBlockBtn.BackgroundColor3 = Settings.AutoBlock and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
+    end)
+    
+    -- AUTO COUNTER Toggle (FITUR UTAMA RESTLESS GAMBLER)
+    local autoCounterBtn = Instance.new("TextButton")
+    autoCounterBtn.Size = UDim2.new(1, 0, 0, 40)
+    autoCounterBtn.Position = UDim2.new(0, 0, 0, 250)
+    autoCounterBtn.BackgroundColor3 = Settings.AutoCounter and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
+    autoCounterBtn.Text = Settings.AutoCounter and "🎲 AUTO COUNTER: ON (HAKARI)" or "🎲 AUTO COUNTER: OFF"
+    autoCounterBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    autoCounterBtn.TextScaled = true
+    autoCounterBtn.Font = Enum.Font.GothamBold
+    autoCounterBtn.BorderSizePixel = 0
+    
+    local autoCounterCorner = Instance.new("UICorner")
+    autoCounterCorner.CornerRadius = UDim.new(0, 10)
+    autoCounterCorner.Parent = autoCounterBtn
+    
+    autoCounterBtn.MouseButton1Click:Connect(function()
+        Settings.AutoCounter = not Settings.AutoCounter
+        autoCounterBtn.Text = Settings.AutoCounter and "🎲 AUTO COUNTER: ON (HAKARI)" or "🎲 AUTO COUNTER: OFF"
+        autoCounterBtn.BackgroundColor3 = Settings.AutoCounter and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
+        print("[AUTO COUNTER] " .. (Settings.AutoCounter and "ACTIVATED" or "DEACTIVATED"))
+    end)
+    
     -- Target Info Panel
     local targetInfo = Instance.new("Frame")
     targetInfo.Size = UDim2.new(1, 0, 0, 50)
-    targetInfo.Position = UDim2.new(0, 0, 0, 205)
+    targetInfo.Position = UDim2.new(0, 0, 0, 300)
     targetInfo.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     targetInfo.BackgroundTransparency = 0.5
     targetInfo.BorderSizePixel = 0
@@ -468,14 +714,32 @@ local function CreateUI()
     targetLabel.Text = "🎯 No Target"
     targetLabel.Parent = targetInfo
     
-    -- Assemble Main Panel
+    -- Status Restless Gambler
+    local hakariStatus = Instance.new("TextLabel")
+    hakariStatus.Size = UDim2.new(1, 0, 0, 25)
+    hakariStatus.Position = UDim2.new(0, 0, 0, 355)
+    hakariStatus.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+    hakariStatus.BackgroundTransparency = 0.5
+    hakariStatus.TextColor3 = Color3.fromRGB(255, 255, 255)
+    hakariStatus.TextScaled = true
+    hakariStatus.Font = Enum.Font.Gotham
+    hakariStatus.Text = "🎰 RESTLESS GAMBLER MODE"
+    hakariStatus.BorderSizePixel = 0
+    
+    local hakariCorner = Instance.new("UICorner")
+    hakariCorner.CornerRadius = UDim.new(0, 8)
+    hakariCorner.Parent = hakariStatus
+    
     titleBar.Parent = mainPanel
     content.Parent = mainPanel
     lockBtn.Parent = content
     toggleRow.Parent = content
     rotateBtn.Parent = content
     cameraBtn.Parent = content
+    autoBlockBtn.Parent = content
+    autoCounterBtn.Parent = content
     targetInfo.Parent = content
+    hakariStatus.Parent = content
     
     -- MINIMIZED BAR
     local minimizedBar = Instance.new("Frame")
@@ -518,7 +782,6 @@ local function CreateUI()
     barStatus.Font = Enum.Font.Gotham
     barStatus.Parent = minimizedBar
     
-    -- Update status di minimized bar
     spawn(function()
         while minimizedBar and minimizedBar.Parent do
             if CurrentTarget and IsAlive(CurrentTarget) then
@@ -531,7 +794,6 @@ local function CreateUI()
         end
     end)
     
-    -- UPDATE TARGET INFO
     spawn(function()
         while targetInfo and targetInfo.Parent do
             if CurrentTarget and IsAlive(CurrentTarget) then
@@ -548,7 +810,23 @@ local function CreateUI()
         end
     end)
     
-    -- Drag functionality
+    -- Update status Hakari
+    spawn(function()
+        while hakariStatus and hakariStatus.Parent do
+            if Settings.AutoCounter then
+                local stacks = GetRoughEnergyStacks()
+                local fever = IsFeverModeActive()
+                local feverText = fever and "🔥 FEVER ACTIVE" or "⚡ NORMAL"
+                hakariStatus.Text = "🎰 RESTLESS GAMBLER | " .. feverText .. " | STACKS: " .. stacks
+                hakariStatus.BackgroundColor3 = fever and Color3.fromRGB(255, 50, 0) or Color3.fromRGB(255, 100, 0)
+            else
+                hakariStatus.Text = "🎰 AUTO COUNTER OFF"
+                hakariStatus.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+            end
+            task.wait(0.5)
+        end
+    end)
+    
     local function MakeDraggable(frame)
         local dragFrame = false
         local dragStart, startPos
@@ -581,7 +859,6 @@ local function CreateUI()
     MakeDraggable(minimizedBar)
     MakeDraggable(mainPanel)
     
-    -- Minimize/Maximize functions
     local function MinimizeUI()
         if Settings.UIMinimized then return end
         Settings.UIMinimized = true
@@ -598,7 +875,6 @@ local function CreateUI()
         mainPanel.Position = minimizedBar.Position
     end
     
-    -- Tombol minimize di main panel
     local minimizeBtn = Instance.new("TextButton")
     minimizeBtn.Size = UDim2.new(0, 32, 0, 32)
     minimizeBtn.Position = UDim2.new(1, -40, 0, 4)
@@ -620,7 +896,6 @@ local function CreateUI()
     end)
     minimizeBtn.Parent = mainPanel
     
-    -- Tombol maximize di minimized bar
     local maximizeBtn = Instance.new("TextButton")
     maximizeBtn.Size = UDim2.new(0, 32, 0, 32)
     maximizeBtn.Position = UDim2.new(1, -40, 0, 4)
@@ -678,7 +953,8 @@ spawn(function()
     wait(1)
     Crosshair = CreateCrosshair()
     CreateUI()
-    print("=== CENDOL HUB V2 LOADED ===")
-    print("=== Camera Follow Active | Enhanced UI ===")
+    print("=== CENDOL HUB V2 + AUTO COUNTER (RESTLESS GAMBLER) LOADED ===")
+    print("=== Auto Counter: Otomatis nge-counter pake R (Special Ability) ===")
+    print("=== Rough Energy Stacks & Fever Mode akan ditampilkan di UI ===")
 end)
 ]])()
