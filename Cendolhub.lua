@@ -1,7 +1,6 @@
--- CENDOL HUB V2 - FULL MERGED EDITION
--- Camera Follow | Crosshair | Body Rotate | Lock Button | Side Dash 180°
--- No Name/Distance Display
--- By: milanlan0073-alt + Modified by Architect 03
+-- CENDOL HUB V2 - JUJUTSU SHENANIGANS EDITION
+-- Lock On Button + Side Dash 180°
+-- Tampilan tombul kaya di foto: bulat, border, status dot, teks di bawah
 
 loadstring([[
 local Players = game:GetService("Players")
@@ -11,38 +10,29 @@ local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
--- ========== SETTINGS ==========
 local Settings = {
     Enabled = false,
     LockPlayer = true,
     LockNPC = true,
-    CameraFollow = true,
     CameraSmoothness = 0.25,
     BodyRotate = true,
     MaxDistance = 200,
     CameraOffset = Vector3.new(0, 2, 0),
-    UIMinimized = false,
     SideDashEnabled = false
 }
 
 local CurrentTarget = nil
 local TargetPart = nil
-local Crosshair = nil
-local UI = {}
 local LockOnButton = nil
 local DashButton = nil
 
--- HITBOXES (prioritas)
 local Hitboxes = {"Head", "UpperTorso", "HumanoidRootPart", "Torso"}
 
--- NPC DETECTION
 local NPCKeywords = {
     "Cursed", "Spirit", "Curse", "NPC", "Mob", "Enemy", "Boss",
-    "Raid", "Demon", "Shadow", "Monster", "Training", "Dummy",
-    "Zombie", "Skeleton", "Goblin", "Orc", "Troll", "Dragon"
+    "Raid", "Demon", "Shadow", "Monster","Dummy"
 }
 
--- UTILITIES
 local function IsAlive(c)
     if not c then return false end
     local h = c:FindFirstChild("Humanoid")
@@ -52,8 +42,8 @@ end
 local function IsNPC(character)
     if Players:GetPlayerFromCharacter(character) then return false end
     local name = character.Name:lower()
-    for _, keyword in ipairs(NPCKeywords) do
-        if name:find(keyword:lower()) then return true end
+    for _, kw in ipairs(NPCKeywords) do
+        if name:find(kw:lower()) then return true end
     end
     return character:FindFirstChild("Humanoid") ~= nil
 end
@@ -62,7 +52,6 @@ local function GetDistance(a, b)
     return (a.Position - b.Position).Magnitude
 end
 
--- GET TARGET TERDEKAT
 local function GetClosestTarget()
     local closest = nil
     local closestDist = Settings.MaxDistance
@@ -70,7 +59,10 @@ local function GetClosestTarget()
     if not myChar then return nil end
     local myPos = myChar:FindFirstChild("HumanoidRootPart")
     if not myPos then return nil end
-    
+
+    local players = {}
+    local npcs = {}
+
     if Settings.LockPlayer then
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= LocalPlayer then
@@ -78,33 +70,33 @@ local function GetClosestTarget()
                 if c and IsAlive(c) then
                     local r = c:FindFirstChild("HumanoidRootPart")
                     if r then
-                        local d = GetDistance(r, myPos)
-                        if d < closestDist then
-                            closestDist = d
-                            closest = c
-                        end
+                        table.insert(players, {char = c, dist = GetDistance(r, myPos)})
                     end
                 end
             end
         end
     end
-    
+
     if Settings.LockNPC then
         for _, obj in ipairs(workspace:GetDescendants()) do
             if obj:IsA("Model") and obj ~= myChar and IsNPC(obj) then
                 local h = obj:FindFirstChild("Humanoid")
                 local r = obj:FindFirstChild("HumanoidRootPart")
                 if h and r and h.Health > 0 then
-                    local d = GetDistance(r, myPos)
-                    if d < closestDist then
-                        closestDist = d
-                        closest = obj
-                    end
+                    table.insert(npcs, {char = obj, dist = GetDistance(r, myPos)})
                 end
             end
         end
     end
-    
+
+    table.sort(players, function(a,b) return a.dist < b.dist end)
+    table.sort(npcs, function(a,b) return a.dist < b.dist end)
+
+    if #players > 0 then
+        closest = players[1].char
+    elseif #npcs > 0 then
+        closest = npcs[1].char
+    end
     return closest
 end
 
@@ -118,22 +110,18 @@ local function GetBestHitbox(char)
     return char:FindFirstChild("HumanoidRootPart")
 end
 
--- BODY ROTATION
 local function RotateToTarget()
     if not Settings.BodyRotate then return end
     if not CurrentTarget or not IsAlive(CurrentTarget) then return end
-    
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     local targetRoot = CurrentTarget:FindFirstChild("HumanoidRootPart")
     if not myRoot or not targetRoot then return end
-    
     local direction = (targetRoot.Position - myRoot.Position).Unit
     local lookAt = CFrame.new(myRoot.Position, myRoot.Position + direction)
     myChar:SetPrimaryPartCFrame(lookAt)
 end
 
--- SIDE DASH 180°
 local function SideDash180()
     if not Settings.SideDashEnabled then return end
     if not CurrentTarget or not IsAlive(CurrentTarget) then return end
@@ -149,101 +137,12 @@ local function SideDash180()
     tween:Play()
 end
 
--- ========== ENHANCED CAMERA FOLLOW ==========
-local function UpdateCameraFollow()
-    if not Settings.CameraFollow then return end
-    if not CurrentTarget or not IsAlive(CurrentTarget) then return end
-    if not TargetPart or not TargetPart.Parent then return end
-    
-    local targetPos = TargetPart.Position + Settings.CameraOffset
-    local currentCFrame = Camera.CFrame
-    local desiredCFrame = CFrame.new(currentCFrame.Position, targetPos)
-    local newCFrame = currentCFrame:Lerp(desiredCFrame, Settings.CameraSmoothness)
-    Camera.CFrame = newCFrame
-end
-
--- ========== CROSSHAIR (NO INFO PANEL) ==========
-local function CreateCrosshair()
-    for i = 1, 10 do
-        if LocalPlayer:FindFirstChild("PlayerGui") then break end
-        wait(0.5)
-    end
-    
-    local sg = Instance.new("ScreenGui")
-    sg.Name = "CendolCrosshair"
-    sg.Parent = LocalPlayer.PlayerGui
-    sg.ResetOnSpawn = false
-    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    
-    -- Outer circle
-    local outer = Instance.new("Frame")
-    outer.Size = UDim2.new(0, 44, 0, 44)
-    outer.Position = UDim2.new(0.5, -22, 0.5, -22)
-    outer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    outer.BackgroundTransparency = 0.85
-    outer.BorderSizePixel = 0
-    outer.ZIndex = 10
-    
-    local outerCorner = Instance.new("UICorner")
-    outerCorner.CornerRadius = UDim.new(1, 0)
-    outerCorner.Parent = outer
-    
-    -- Inner circle
-    local inner = Instance.new("Frame")
-    inner.Size = UDim2.new(0, 24, 0, 24)
-    inner.Position = UDim2.new(0.5, -12, 0.5, -12)
-    inner.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-    inner.BackgroundTransparency = 0.4
-    inner.BorderSizePixel = 0
-    inner.ZIndex = 11
-    
-    local innerCorner = Instance.new("UICorner")
-    innerCorner.CornerRadius = UDim.new(1, 0)
-    innerCorner.Parent = inner
-    
-    -- Center dot
-    local dot = Instance.new("Frame")
-    dot.Size = UDim2.new(0, 6, 0, 6)
-    dot.Position = UDim2.new(0.5, -3, 0.5, -3)
-    dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    dot.BorderSizePixel = 0
-    dot.ZIndex = 12
-    
-    local dotCorner = Instance.new("UICorner")
-    dotCorner.CornerRadius = UDim.new(1, 0)
-    dotCorner.Parent = dot
-    
-    inner.Parent = outer
-    dot.Parent = inner
-    outer.Parent = sg
-    
-    return {outer, inner}
-end
-
-local function UpdateCrosshair()
-    if not Crosshair then return end
-    local outer, inner = unpack(Crosshair)
-    
-    if CurrentTarget and IsAlive(CurrentTarget) then
-        inner.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-        inner.BackgroundTransparency = 0.2
-        outer.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-        outer.BackgroundTransparency = 0.7
-    else
-        inner.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-        inner.BackgroundTransparency = 0.6
-        outer.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
-        outer.BackgroundTransparency = 0.85
-    end
-end
-
--- ========== GAME BUTTONS (Lock On + Dash) ==========
+-- MEMBUAT TOMBOL BULAT KAYA DI FOTO
 local function CreateGameButtons()
     for i = 1, 10 do
         if LocalPlayer:FindFirstChild("PlayerGui") then break end
         wait(0.5)
     end
-    
     local sg = Instance.new("ScreenGui")
     sg.Name = "JujutsuLockOn"
     sg.Parent = LocalPlayer.PlayerGui
@@ -291,7 +190,6 @@ local function CreateGameButtons()
 
     LockOnButton.MouseButton1Click:Connect(function()
         Settings.Enabled = not Settings.Enabled
-        Settings.CameraFollow = Settings.Enabled
         if Settings.Enabled then
             local newTarget = GetClosestTarget()
             if newTarget then
@@ -312,12 +210,11 @@ local function CreateGameButtons()
             LockOnButton.BackgroundTransparency = 0.3
             btnText.Text = "LOCK"
         end
-        UpdateCrosshair()
     end)
 
     LockOnButton.Parent = sg
 
-    -- TOMBOL DASH
+    -- TOMBOL DASH (Side Dash toggle)
     DashButton = Instance.new("ImageButton")
     DashButton.Size = UDim2.new(0, 60, 0, 60)
     DashButton.Position = UDim2.new(1, -85, 1, -170)
@@ -374,10 +271,39 @@ local function CreateGameButtons()
     DashButton.Parent = sg
 end
 
--- ========== MAIN LOOP ==========
+-- HOOK DASH ASLI (JIKA ADA)
+local function HookNativeDash()
+    task.wait(2)
+    local function findButton(parent)
+        if not parent then return nil end
+        for _, child in ipairs(parent:GetChildren()) do
+            if child:IsA("ImageButton") or child:IsA("TextButton") then
+                if string.lower(child.Name or ""):find("dash") or (child.Text and string.lower(child.Text):find("dash")) then
+                    return child
+                end
+            end
+            local found = findButton(child)
+            if found then return found end
+        end
+        return nil
+    end
+    local dashBtn = findButton(LocalPlayer.PlayerGui)
+    if dashBtn then
+        dashBtn.MouseButton1Click:Connect(function()
+            if Settings.SideDashEnabled then SideDash180() end
+        end)
+    else
+        if DashButton then
+            DashButton.MouseButton1Click:Connect(function()
+                if Settings.SideDashEnabled then SideDash180() end
+            end)
+        end
+    end
+end
+
+-- MAIN LOOP CAMERA & ROTASI
 RunService.RenderStepped:Connect(function()
     if not LocalPlayer.Character then return end
-    
     if Settings.Enabled then
         if not CurrentTarget or not IsAlive(CurrentTarget) then
             local newTarget = GetClosestTarget()
@@ -386,50 +312,20 @@ RunService.RenderStepped:Connect(function()
                 TargetPart = GetBestHitbox(CurrentTarget)
             end
         end
-        
-        if CurrentTarget and not IsAlive(CurrentTarget) then
-            CurrentTarget = nil
-            TargetPart = nil
+        if CurrentTarget and TargetPart and TargetPart.Parent then
+            local targetPos = TargetPart.Position + Settings.CameraOffset
+            local currentCFrame = Camera.CFrame
+            local desiredCFrame = CFrame.new(currentCFrame.Position, targetPos)
+            Camera.CFrame = currentCFrame:Lerp(desiredCFrame, Settings.CameraSmoothness)
         end
-        
-        UpdateCameraFollow()
         RotateToTarget()
     end
-    
-    UpdateCrosshair()
 end)
 
--- HOOK DASH KE SIDE DASH
-local function HookSideDash()
-    task.wait(2)
-    local function findDashButton(parent)
-        if not parent then return nil end
-        for _, child in ipairs(parent:GetChildren()) do
-            if child:IsA("ImageButton") or child:IsA("TextButton") then
-                if string.lower(child.Name or ""):find("dash") or (child.Text and string.lower(child.Text):find("dash")) then
-                    return child
-                end
-            end
-            local found = findDashButton(child)
-            if found then return found end
-        end
-        return nil
-    end
-    local dashBtn = findDashButton(LocalPlayer.PlayerGui)
-    if dashBtn then
-        dashBtn.MouseButton1Click:Connect(function()
-            if Settings.SideDashEnabled then SideDash180() end
-        end)
-    end
-end
-
--- INIT
 spawn(function()
     wait(1)
-    Crosshair = CreateCrosshair()
     CreateGameButtons()
-    HookSideDash()
-    print("=== CENDOL HUB V2 - MERGED EDITION LOADED ===")
-    print("=== Lock On + Side Dash 180° | No Name/Distance ===")
-end
+    HookNativeDash()
+    print("✅ Lock On + Side Dash 180° siap dipake")
+end)
 ]])()
