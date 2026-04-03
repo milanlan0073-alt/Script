@@ -1,6 +1,6 @@
--- CENDOL HUB V2 - BLACK FLASH AFTER DASH
--- JUJUTSU SHENANIGANS OPTIMIZED
--- BY ARCHITECT 03
+-- CENDOL HUB V2 - RANGE 5-500 STUDS
+-- AUTO BLOCK + AUTO COUNTER + DASH 180° + SEEK BAR
+-- JUJUTSU SHENANIGANS - ARCHITECT 03 EDITION
 
 loadstring([[
 local Players = game:GetService("Players")
@@ -11,32 +11,44 @@ local LocalPlayer = Players.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
 
 local CoreGui = game:GetService("CoreGui")
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local Settings = {
+    -- LOCK ON
     Enabled = false,
     LockPlayer = true,
     LockNPC = true,
     CameraSmoothness = 0.3,
     BodyRotate = true,
-    MaxDistance = 250,
+    MaxDistance = 150,
     CameraOffset = Vector3.new(0, 1.5, 0),
-    SideDashEnabled = false,
     RotateCamera = true,
     Minimized = false,
-    BlackFlashAfterDash = true  -- <-- FITUR BARU KONTOL!
+    
+    -- DASH
+    SideDashEnabled = false,
+    
+    -- AUTO BLOCK
+    AutoBlock = false,
+    
+    -- AUTO COUNTER
+    AutoCounter = false
 }
 
 local CurrentTarget = nil
 local TargetPart = nil
-local LockOnButton = nil
-local DashButton = nil
-local BlackFlashButton = nil
-local MinimizeButton = nil
 local MainFrame = nil
-local isMinimizing = false
 local lastDashTime = 0
 local dashCooldown = 0.5
+local lastBlockTime = 0
+local blockCooldown = 0.3
+local lastCounterTime = 0
+local counterCooldown = 0.5
+
+-- SLIDER
+local RangeSlider = nil
+local RangeFill = nil
+local RangeValueLabel = nil
+local isDraggingSlider = false
 
 local Hitboxes = {"Head", "UpperTorso", "HumanoidRootPart", "Torso", "Chest"}
 
@@ -82,7 +94,10 @@ local function GetClosestTarget()
                 if c and IsAlive(c) then
                     local r = c:FindFirstChild("HumanoidRootPart")
                     if r then
-                        table.insert(targets, {char = c, dist = GetDistance(r, myPos), isPlayer = true})
+                        local dist = GetDistance(r, myPos)
+                        if dist <= Settings.MaxDistance then
+                            table.insert(targets, {char = c, dist = dist})
+                        end
                     end
                 end
             end
@@ -95,7 +110,10 @@ local function GetClosestTarget()
                 local h = obj:FindFirstChild("Humanoid")
                 local r = obj:FindFirstChild("HumanoidRootPart")
                 if h and r and h.Health > 0 then
-                    table.insert(targets, {char = obj, dist = GetDistance(r, myPos), isPlayer = false})
+                    local dist = GetDistance(r, myPos)
+                    if dist <= Settings.MaxDistance then
+                        table.insert(targets, {char = obj, dist = dist})
+                    end
                 end
             end
         end
@@ -124,7 +142,7 @@ local function RotateToTarget()
     if not CurrentTarget or not IsAlive(CurrentTarget) then return end
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    local targetRoot = CurrentTarget:FindFirstChild("HumanoidRootPart")
+    local targetRoot = CurrentTarget and CurrentTarget:FindFirstChild("HumanoidRootPart")
     if not myRoot or not targetRoot then return end
     local direction = (targetRoot.Position - myRoot.Position).Unit
     local lookAt = CFrame.new(myRoot.Position, myRoot.Position + direction)
@@ -133,102 +151,8 @@ local function RotateToTarget()
     end)
 end
 
--- TRIGGER BLACK FLASH - MULTI METHOD
-local function TriggerBlackFlash()
-    local myChar = LocalPlayer.Character
-    if not myChar then return false end
-    
-    local success = false
-    
-    -- METHOD 1: Cari remote event di karakter
-    local remotesToTry = {
-        "BlackFlash", "BlackFlashEvent", "CriticalHit", "SpecialMove",
-        "M1", "Attack", "Punch", "HeavyAttack", "Skill", "Domain"
-    }
-    
-    for _, rName in ipairs(remotesToTry) do
-        -- Cek di karakter
-        local remote = myChar:FindFirstChild(rName)
-        if remote and remote:IsA("RemoteEvent") then
-            pcall(function()
-                remote:FireServer("BlackFlash")
-                success = true
-            end)
-            if success then break end
-        end
-        
-        -- Cek di ReplicatedStorage
-        local remote2 = game:GetService("ReplicatedStorage"):FindFirstChild(rName)
-        if remote2 and remote2:IsA("RemoteEvent") then
-            pcall(function()
-                remote2:FireServer("BlackFlash")
-                success = true
-            end)
-            if success then break end
-        end
-        
-        -- Cek di Players
-        local remote3 = game:GetService("Players"):FindFirstChild(rName)
-        if remote3 and remote3:IsA("RemoteEvent") then
-            pcall(function()
-                remote3:FireServer("BlackFlash")
-                success = true
-            end)
-            if success then break end
-        end
-    end
-    
-    -- METHOD 2: Simulate M1 click (buat game tertentu)
-    if not success then
-        pcall(function()
-            local VirtualUser = game:GetService("VirtualUser")
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton1(Vector2.new(0,0))
-            success = true
-        end)
-    end
-    
-    -- METHOD 3: Pake BindableEvent
-    if not success then
-        for _, rName in ipairs(remotesToTry) do
-            local remote = myChar:FindFirstChild(rName)
-            if remote and remote:IsA("BindableEvent") then
-                pcall(function()
-                    remote:Fire("BlackFlash")
-                    success = true
-                end)
-                if success then break end
-            end
-        end
-    end
-    
-    return success
-end
-
--- BLACK FLASH EFFECT VISUAL (simulasi)
-local function ShowBlackFlashEffect()
-    pcall(function()
-        local effect = Instance.new("Part")
-        effect.Size = Vector3.new(5, 5, 5)
-        effect.Shape = Enum.PartType.Ball
-        effect.BrickColor = BrickColor.new("Bright red")
-        effect.Material = Enum.Material.Neon
-        effect.CanCollide = false
-        effect.Anchored = true
-        effect.Position = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position) or Vector3.new(0,0,0)
-        effect.Parent = workspace
-        
-        local tween = TweenService:Create(effect, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
-            {Size = Vector3.new(15, 15, 15), Transparency = 1})
-        tween:Play()
-        tween.Completed:Connect(function()
-            effect:Destroy()
-        end)
-    end)
-end
-
--- DASH 180° + BLACK FLASH
-local function SideDash180WithBlackFlash()
+-- DASH 180°
+local function SideDash180()
     if not Settings.SideDashEnabled then return end
     if not CurrentTarget or not IsAlive(CurrentTarget) then return end
     
@@ -245,125 +169,401 @@ local function SideDash180WithBlackFlash()
     local dashDirection = -toTarget
     local dashPosition = rootPart.Position + (dashDirection * 12)
     
-    -- EFEK DASH
-    pcall(function()
-        local dashEffect = Instance.new("Part")
-        dashEffect.Size = Vector3.new(2, 2, 2)
-        dashEffect.BrickColor = BrickColor.new("White")
-        dashEffect.Material = Enum.Material.Neon
-        dashEffect.CanCollide = false
-        dashEffect.Anchored = true
-        dashEffect.Position = rootPart.Position
-        dashEffect.Parent = workspace
-        TweenService:Create(dashEffect, TweenInfo.new(0.2), {Transparency = 1, Size = Vector3.new(8, 8, 8)}):Play()
-        game:GetService("Debris"):AddItem(dashEffect, 0.3)
-    end)
-    
-    -- GERAK DASH
     pcall(function()
         local tween = TweenService:Create(rootPart, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
             {CFrame = CFrame.new(dashPosition, dashPosition + toTarget)})
         tween:Play()
-        
-        -- BLACK FLASH SETELAH DASH SELESAI
-        tween.Completed:Connect(function()
-            -- Efek visual dulu
-            ShowBlackFlashEffect()
-            
-            -- Trigger black flash MULTIPLE TIMES biar pasti kena
-            for i = 1, 3 do
-                task.wait(0.05)
-                TriggerBlackFlash()
+    end)
+end
+
+-- AUTO BLOCK
+local function TriggerBlock()
+    if not Settings.AutoBlock then return end
+    local currentTime = tick()
+    if currentTime - lastBlockTime < blockCooldown then return end
+    lastBlockTime = currentTime
+    
+    -- Cari tombol block di UI
+    local function findBlockButton(parent)
+        if not parent then return nil end
+        for _, child in ipairs(parent:GetChildren()) do
+            if child:IsA("ImageButton") or child:IsA("TextButton") then
+                local name = string.lower(child.Name or "")
+                local text = string.lower(child.Text or "")
+                if name:find("block") or name:find("guard") or name:find("defend") or
+                   text:find("block") or text:find("guard") or text:find("defend") then
+                    return child
+                end
             end
-            
-            -- Tambah efek suara visual
-            pcall(function()
-                local flashPart = Instance.new("Part")
-                flashPart.Size = Vector3.new(10, 10, 10)
-                flashPart.BrickColor = BrickColor.new("Really red")
-                flashPart.Material = Enum.Material.Neon
-                flashPart.CanCollide = false
-                flashPart.Anchored = true
-                flashPart.Position = targetRoot.Position
-                flashPart.Parent = workspace
-                TweenService:Create(flashPart, TweenInfo.new(0.2), {Transparency = 1}):Play()
-                game:GetService("Debris"):AddItem(flashPart, 0.3)
-            end)
+            local found = findBlockButton(child)
+            if found then return found end
+        end
+        return nil
+    end
+    
+    local blockBtn = findBlockButton(LocalPlayer.PlayerGui)
+    if blockBtn then
+        pcall(function()
+            blockBtn:Click()
         end)
+    end
+    
+    -- Alternative: cari remote buat block
+    pcall(function()
+        local remote = game:GetService("ReplicatedStorage"):FindFirstChild("Block")
+        if remote and remote:IsA("RemoteEvent") then
+            remote:FireServer()
+        end
+    end)
+end
+
+-- AUTO COUNTER
+local function TriggerCounter()
+    if not Settings.AutoCounter then return end
+    local currentTime = tick()
+    if currentTime - lastCounterTime < counterCooldown then return end
+    lastCounterTime = currentTime
+    
+    -- Cari tombol counter di UI
+    local function findCounterButton(parent)
+        if not parent then return nil end
+        for _, child in ipairs(parent:GetChildren()) do
+            if child:IsA("ImageButton") or child:IsA("TextButton") then
+                local name = string.lower(child.Name or "")
+                local text = string.lower(child.Text or "")
+                if name:find("counter") or name:find("parry") or name:find("reflect") or
+                   text:find("counter") or text:find("parry") or text:find("reflect") then
+                    return child
+                end
+            end
+            local found = findCounterButton(child)
+            if found then return found end
+        end
+        return nil
+    end
+    
+    local counterBtn = findCounterButton(LocalPlayer.PlayerGui)
+    if counterBtn then
+        pcall(function()
+            counterBtn:Click()
+        end)
+    end
+    
+    -- Alternative: cari remote buat counter
+    pcall(function()
+        local remote = game:GetService("ReplicatedStorage"):FindFirstChild("Counter")
+        if remote and remote:IsA("RemoteEvent") then
+            remote:FireServer()
+        end
+    end)
+end
+
+-- UPDATE SLIDER
+local function UpdateSliderValue(input)
+    if not RangeSlider or not RangeFill or not RangeValueLabel then return end
+    
+    local sliderFrame = RangeSlider.Parent
+    local relativeX = math.clamp((input.Position.X - sliderFrame.AbsolutePosition.X) / sliderFrame.AbsoluteSize.X, 0, 1)
+    
+    -- RANGE 5 - 500 STUDS
+    local minRange = 5
+    local maxRange = 500
+    local rangeValue = minRange + (maxRange - minRange) * relativeX
+    rangeValue = math.floor(rangeValue + 0.5)
+    
+    Settings.MaxDistance = rangeValue
+    RangeFill.Size = UDim2.new(relativeX, 0, 1, 0)
+    RangeValueLabel.Text = tostring(rangeValue) .. " studs"
+end
+
+-- CREATE SEEK BAR
+local function CreateSeekBar(parent, yPos)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(0.9, 0, 0, 40)
+    container.Position = UDim2.new(0.05, 0, yPos, 0)
+    container.BackgroundTransparency = 1
+    container.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.5, 0, 0.5, 0)
+    label.Position = UDim2.new(0, 0, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = "🔍 Lock Range:"
+    label.TextColor3 = Color3.fromRGB(200, 200, 255)
+    label.TextSize = 11
+    label.Font = Enum.Font.GothamBold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = container
+    
+    RangeValueLabel = Instance.new("TextLabel")
+    RangeValueLabel.Size = UDim2.new(0.5, 0, 0.5, 0)
+    RangeValueLabel.Position = UDim2.new(0.5, 0, 0, 0)
+    RangeValueLabel.BackgroundTransparency = 1
+    RangeValueLabel.Text = "150 studs"
+    RangeValueLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+    RangeValueLabel.TextSize = 11
+    RangeValueLabel.Font = Enum.Font.GothamBold
+    RangeValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    RangeValueLabel.Parent = container
+    
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Size = UDim2.new(1, 0, 0, 8)
+    sliderBg.Position = UDim2.new(0, 0, 0.7, 0)
+    sliderBg.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    sliderBg.BorderSizePixel = 0
+    sliderBg.Parent = container
+    
+    local bgCorner = Instance.new("UICorner")
+    bgCorner.CornerRadius = UDim.new(0, 4)
+    bgCorner.Parent = sliderBg
+    
+    RangeFill = Instance.new("Frame")
+    RangeFill.Size = UDim2.new((Settings.MaxDistance - 5) / 495, 0, 1, 0)
+    RangeFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    RangeFill.BorderSizePixel = 0
+    RangeFill.Parent = sliderBg
+    
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(0, 4)
+    fillCorner.Parent = RangeFill
+    
+    RangeSlider = Instance.new("TextButton")
+    RangeSlider.Size = UDim2.new(0, 16, 0, 16)
+    RangeSlider.Position = UDim2.new((Settings.MaxDistance - 5) / 495, -8, 0.7, -4)
+    RangeSlider.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    RangeSlider.BorderSizePixel = 0
+    RangeSlider.Text = ""
+    RangeSlider.Parent = container
+    
+    local sliderCorner = Instance.new("UICorner")
+    sliderCorner.CornerRadius = UDim.new(1, 0)
+    sliderCorner.Parent = RangeSlider
+    
+    -- DRAG SLIDER
+    RangeSlider.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            isDraggingSlider = true
+            UpdateSliderValue(input)
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if isDraggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
+            UpdateSliderValue(input)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            isDraggingSlider = false
+        end
+    end)
+    
+    -- UPDATE POSISI SLIDER KETIKA RANGE BERUBAH
+    local function updateSliderPosition()
+        if RangeSlider and RangeFill then
+            local t = (Settings.MaxDistance - 5) / 495
+            RangeSlider.Position = UDim2.new(t, -8, 0.7, -4)
+            RangeFill.Size = UDim2.new(t, 0, 1, 0)
+            if RangeValueLabel then
+                RangeValueLabel.Text = tostring(Settings.MaxDistance) .. " studs"
+            end
+        end
+    end
+    
+    -- HOOK UPDATE
+    local oldMaxDistance = Settings.MaxDistance
+    return updateSliderPosition
+end
+
+-- DETECT ENEMY ATTACK (buat auto block & counter)
+local function DetectEnemyAttack()
+    task.spawn(function()
+        while task.wait(0.05) do
+            if Settings.AutoBlock or Settings.AutoCounter then
+                local myChar = LocalPlayer.Character
+                if myChar and CurrentTarget and IsAlive(CurrentTarget) then
+                    -- Cek apakah target sedang attack (dari animasi)
+                    local humanoid = CurrentTarget:FindFirstChild("Humanoid")
+                    if humanoid and humanoid:GetPlayingAnimationTracks() then
+                        for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
+                            local animName = track.Animation and track.Animation.AnimationId or ""
+                            if animName:find("attack") or animName:find("punch") or animName:find("slash") then
+                                if Settings.AutoBlock then
+                                    TriggerBlock()
+                                end
+                                if Settings.AutoCounter then
+                                    task.wait(Settings.CounterDelay)
+                                    TriggerCounter()
+                                end
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end)
 end
 
 -- BUAT UI
 local function CreateUI()
-    local container = pcall(function() return CoreGui end) and CoreGui or PlayerGui
+    local container = pcall(function() return CoreGui end) and CoreGui or LocalPlayer:WaitForChild("PlayerGui")
     
     MainFrame = Instance.new("Frame")
     MainFrame.Name = "CendolHubV2"
-    MainFrame.Size = UDim2.new(0, 260, 0, 45)
-    MainFrame.Position = UDim2.new(0.5, -130, 0.02, 0)
+    MainFrame.Size = UDim2.new(0, 240, 0, 280)
+    MainFrame.Position = UDim2.new(0.5, -120, 0.02, 0)
     MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
-    MainFrame.BackgroundTransparency = 0.85
+    MainFrame.BackgroundTransparency = 0.1
     MainFrame.BorderSizePixel = 1
-    MainFrame.BorderColor3 = Color3.fromRGB(255, 0, 0)
+    MainFrame.BorderColor3 = Color3.fromRGB(0, 255, 0)
     MainFrame.ZIndex = 10
     
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
-    corner.Parent = MainFrame
+    local mainCorner = Instance.new("UICorner")
+    mainCorner.CornerRadius = UDim.new(0, 12)
+    mainCorner.Parent = MainFrame
     
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(0.7, 0, 1, 0)
-    title.Position = UDim2.new(0.05, 0, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "⚡ CENDOL HUB V2 | BLACK FLASH ⚡"
-    title.TextColor3 = Color3.fromRGB(255, 0, 0)
-    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.BackgroundColor3 = Color3.fromRGB(0, 20, 0)
+    title.BackgroundTransparency = 0.3
+    title.Text = "⚡ CENDOL HUB V2 ⚡"
+    title.TextColor3 = Color3.fromRGB(0, 255, 0)
+    title.TextSize = 14
     title.Font = Enum.Font.GothamBold
-    title.TextSize = 12
     title.ZIndex = 10
     title.Parent = MainFrame
     
-    -- Minimize button
-    MinimizeButton = Instance.new("TextButton")
-    MinimizeButton.Size = UDim2.new(0, 28, 0, 28)
-    MinimizeButton.Position = UDim2.new(1, -32, 0, 8)
-    MinimizeButton.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-    MinimizeButton.BackgroundTransparency = 0.3
-    MinimizeButton.Text = "−"
-    MinimizeButton.TextColor3 = Color3.fromRGB(255, 0, 0)
-    MinimizeButton.TextSize = 18
-    MinimizeButton.Font = Enum.Font.GothamBold
-    MinimizeButton.BorderSizePixel = 0
-    MinimizeButton.ZIndex = 10
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 12)
+    titleCorner.Parent = title
+    
+    -- LOCK ON BUTTON
+    local LockButton = Instance.new("TextButton")
+    LockButton.Size = UDim2.new(0, 100, 0, 35)
+    LockButton.Position = UDim2.new(0.5, -105, 0, 45)
+    LockButton.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
+    LockButton.BackgroundTransparency = 0.2
+    LockButton.Text = "🔒 LOCK OFF"
+    LockButton.TextColor3 = Color3.fromRGB(200, 200, 255)
+    LockButton.TextSize = 12
+    LockButton.Font = Enum.Font.GothamBold
+    LockButton.BorderSizePixel = 0
+    LockButton.ZIndex = 10
+    
+    local lockCorner = Instance.new("UICorner")
+    lockCorner.CornerRadius = UDim.new(0, 8)
+    lockCorner.Parent = LockButton
+    
+    LockButton.Parent = MainFrame
+    
+    -- DASH BUTTON
+    local DashButton = Instance.new("TextButton")
+    DashButton.Size = UDim2.new(0, 100, 0, 35)
+    DashButton.Position = UDim2.new(0.5, 5, 0, 45)
+    DashButton.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
+    DashButton.BackgroundTransparency = 0.2
+    DashButton.Text = "💨 DASH OFF"
+    DashButton.TextColor3 = Color3.fromRGB(200, 200, 255)
+    DashButton.TextSize = 12
+    DashButton.Font = Enum.Font.GothamBold
+    DashButton.BorderSizePixel = 0
+    DashButton.ZIndex = 10
+    
+    local dashCorner = Instance.new("UICorner")
+    dashCorner.CornerRadius = UDim.new(0, 8)
+    dashCorner.Parent = DashButton
+    
+    DashButton.Parent = MainFrame
+    
+    -- AUTO BLOCK BUTTON
+    local BlockButton = Instance.new("TextButton")
+    BlockButton.Size = UDim2.new(0, 100, 0, 35)
+    BlockButton.Position = UDim2.new(0.5, -105, 0, 90)
+    BlockButton.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
+    BlockButton.BackgroundTransparency = 0.2
+    BlockButton.Text = "🛡️ BLOCK OFF"
+    BlockButton.TextColor3 = Color3.fromRGB(200, 200, 255)
+    BlockButton.TextSize = 12
+    BlockButton.Font = Enum.Font.GothamBold
+    BlockButton.BorderSizePixel = 0
+    BlockButton.ZIndex = 10
+    
+    local blockCorner = Instance.new("UICorner")
+    blockCorner.CornerRadius = UDim.new(0, 8)
+    blockCorner.Parent = BlockButton
+    
+    BlockButton.Parent = MainFrame
+    
+    -- AUTO COUNTER BUTTON
+    local CounterButton = Instance.new("TextButton")
+    CounterButton.Size = UDim2.new(0, 100, 0, 35)
+    CounterButton.Position = UDim2.new(0.5, 5, 0, 90)
+    CounterButton.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
+    CounterButton.BackgroundTransparency = 0.2
+    CounterButton.Text = "⚔️ COUNTER OFF"
+    CounterButton.TextColor3 = Color3.fromRGB(200, 200, 255)
+    CounterButton.TextSize = 12
+    CounterButton.Font = Enum.Font.GothamBold
+    CounterButton.BorderSizePixel = 0
+    CounterButton.ZIndex = 10
+    
+    local counterCorner = Instance.new("UICorner")
+    counterCorner.CornerRadius = UDim.new(0, 8)
+    counterCorner.Parent = CounterButton
+    
+    CounterButton.Parent = MainFrame
+    
+    -- SEEK BAR RANGE (5 - 500 studs)
+    local updateSlider = CreateSeekBar(MainFrame, 0.5)
+    
+    -- MINIMIZE BUTTON
+    local MinButton = Instance.new("TextButton")
+    MinButton.Size = UDim2.new(0, 30, 0, 30)
+    MinButton.Position = UDim2.new(1, -35, 0, 5)
+    MinButton.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    MinButton.BackgroundTransparency = 0.3
+    MinButton.Text = "−"
+    MinButton.TextColor3 = Color3.fromRGB(0, 255, 0)
+    MinButton.TextSize = 18
+    MinButton.Font = Enum.Font.GothamBold
+    MinButton.BorderSizePixel = 0
+    MinButton.ZIndex = 10
     
     local minCorner = Instance.new("UICorner")
     minCorner.CornerRadius = UDim.new(0, 6)
-    minCorner.Parent = MinimizeButton
+    minCorner.Parent = MinButton
     
-    MinimizeButton.MouseButton1Click:Connect(function()
-        if Settings.Minimized then
-            Settings.Minimized = false
-            LockOnButton.Visible = true
-            DashButton.Visible = true
-            MinimizeButton.Text = "−"
-            MainFrame.Size = UDim2.new(0, 260, 0, 45)
-        else
-            Settings.Minimized = true
-            LockOnButton.Visible = false
+    local minimized = false
+    MinButton.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        if minimized then
+            LockButton.Visible = false
             DashButton.Visible = false
-            MinimizeButton.Text = "□"
-            MainFrame.Size = UDim2.new(0, 260, 0, 45)
+            BlockButton.Visible = false
+            CounterButton.Visible = false
+            MainFrame.Size = UDim2.new(0, 240, 0, 45)
+            MinButton.Text = "□"
+        else
+            LockButton.Visible = true
+            DashButton.Visible = true
+            BlockButton.Visible = true
+            CounterButton.Visible = true
+            MainFrame.Size = UDim2.new(0, 240, 0, 280)
+            MinButton.Text = "−"
         end
     end)
     
-    MinimizeButton.Parent = MainFrame
+    MinButton.Parent = MainFrame
     
     -- DRAG MOVE
     local dragging = false
     local dragStart = nil
     local startPos = nil
     
-    MainFrame.InputBegan:Connect(function(input)
+    title.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
             dragStart = input.Position
@@ -371,7 +571,7 @@ local function CreateUI()
         end
     end)
     
-    MainFrame.InputEnded:Connect(function(input)
+    title.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = false
         end
@@ -384,30 +584,8 @@ local function CreateUI()
         end
     end)
     
-    -- LOCK ON BUTTON
-    LockOnButton = Instance.new("TextButton")
-    LockOnButton.Size = UDim2.new(0, 75, 0, 35)
-    LockOnButton.Position = UDim2.new(0.5, -80, 0.15, 0)
-    LockOnButton.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
-    LockOnButton.BackgroundTransparency = 0.2
-    LockOnButton.Text = "🔒 OFF"
-    LockOnButton.TextColor3 = Color3.fromRGB(200, 200, 255)
-    LockOnButton.TextSize = 13
-    LockOnButton.Font = Enum.Font.GothamBold
-    LockOnButton.BorderSizePixel = 0
-    LockOnButton.ZIndex = 10
-    
-    local lockCorner = Instance.new("UICorner")
-    lockCorner.CornerRadius = UDim.new(0, 8)
-    lockCorner.Parent = LockOnButton
-    
-    local lockStroke = Instance.new("UIStroke")
-    lockStroke.Color = Color3.fromRGB(100, 100, 255)
-    lockStroke.Thickness = 2
-    lockStroke.Transparency = 0.3
-    lockStroke.Parent = LockOnButton
-    
-    LockOnButton.MouseButton1Click:Connect(function()
+    -- BUTTON LOGIC
+    LockButton.MouseButton1Click:Connect(function()
         Settings.Enabled = not Settings.Enabled
         if Settings.Enabled then
             local newTarget = GetClosestTarget()
@@ -415,73 +593,64 @@ local function CreateUI()
                 CurrentTarget = newTarget
                 TargetPart = GetBestHitbox(CurrentTarget)
             end
-            LockOnButton.Text = "🔒 ON"
-            LockOnButton.TextColor3 = Color3.fromRGB(255, 0, 0)
-            lockStroke.Color = Color3.fromRGB(255, 0, 0)
-            lockStroke.Transparency = 0
-            LockOnButton.BackgroundColor3 = Color3.fromRGB(50, 0, 0)
+            LockButton.Text = "🔒 LOCK ON"
+            LockButton.TextColor3 = Color3.fromRGB(0, 255, 0)
+            LockButton.BackgroundColor3 = Color3.fromRGB(0, 50, 0)
         else
             CurrentTarget = nil
             TargetPart = nil
-            LockOnButton.Text = "🔒 OFF"
-            LockOnButton.TextColor3 = Color3.fromRGB(200, 200, 255)
-            lockStroke.Color = Color3.fromRGB(100, 100, 255)
-            lockStroke.Transparency = 0.3
-            LockOnButton.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
+            LockButton.Text = "🔒 LOCK OFF"
+            LockButton.TextColor3 = Color3.fromRGB(200, 200, 255)
+            LockButton.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
         end
     end)
-    
-    LockOnButton.Parent = MainFrame
-    
-    -- DASH + BLACK FLASH BUTTON (TOGGLE)
-    DashButton = Instance.new("TextButton")
-    DashButton.Size = UDim2.new(0, 85, 0, 35)
-    DashButton.Position = UDim2.new(0.5, 0, 0.15, 0)
-    DashButton.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
-    DashButton.BackgroundTransparency = 0.2
-    DashButton.Text = "⚡ DASH+BF OFF"
-    DashButton.TextColor3 = Color3.fromRGB(200, 200, 255)
-    DashButton.TextSize = 11
-    DashButton.Font = Enum.Font.GothamBold
-    DashButton.BorderSizePixel = 0
-    DashButton.ZIndex = 10
-    
-    local dashCorner = Instance.new("UICorner")
-    dashCorner.CornerRadius = UDim.new(0, 8)
-    dashCorner.Parent = DashButton
-    
-    local dashStroke = Instance.new("UIStroke")
-    dashStroke.Color = Color3.fromRGB(150, 150, 200)
-    dashStroke.Thickness = 2
-    dashStroke.Transparency = 0.3
-    dashStroke.Parent = DashButton
     
     DashButton.MouseButton1Click:Connect(function()
         Settings.SideDashEnabled = not Settings.SideDashEnabled
         if Settings.SideDashEnabled then
-            DashButton.Text = "⚡ DASH+BF ON"
-            DashButton.TextColor3 = Color3.fromRGB(255, 0, 0)
-            dashStroke.Color = Color3.fromRGB(255, 0, 0)
-            dashStroke.Transparency = 0
-            DashButton.BackgroundColor3 = Color3.fromRGB(50, 0, 0)
+            DashButton.Text = "💨 DASH ON"
+            DashButton.TextColor3 = Color3.fromRGB(0, 255, 0)
+            DashButton.BackgroundColor3 = Color3.fromRGB(0, 50, 0)
         else
-            DashButton.Text = "⚡ DASH+BF OFF"
+            DashButton.Text = "💨 DASH OFF"
             DashButton.TextColor3 = Color3.fromRGB(200, 200, 255)
-            dashStroke.Color = Color3.fromRGB(150, 150, 200)
-            dashStroke.Transparency = 0.3
             DashButton.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
         end
     end)
     
-    DashButton.Parent = MainFrame
+    BlockButton.MouseButton1Click:Connect(function()
+        Settings.AutoBlock = not Settings.AutoBlock
+        if Settings.AutoBlock then
+            BlockButton.Text = "🛡️ BLOCK ON"
+            BlockButton.TextColor3 = Color3.fromRGB(0, 255, 0)
+            BlockButton.BackgroundColor3 = Color3.fromRGB(0, 50, 0)
+        else
+            BlockButton.Text = "🛡️ BLOCK OFF"
+            BlockButton.TextColor3 = Color3.fromRGB(200, 200, 255)
+            BlockButton.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
+        end
+    end)
+    
+    CounterButton.MouseButton1Click:Connect(function()
+        Settings.AutoCounter = not Settings.AutoCounter
+        if Settings.AutoCounter then
+            CounterButton.Text = "⚔️ COUNTER ON"
+            CounterButton.TextColor3 = Color3.fromRGB(0, 255, 0)
+            CounterButton.BackgroundColor3 = Color3.fromRGB(0, 50, 0)
+        else
+            CounterButton.Text = "⚔️ COUNTER OFF"
+            CounterButton.TextColor3 = Color3.fromRGB(200, 200, 255)
+            CounterButton.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
+        end
+    end)
     
     MainFrame.Parent = container
     
-    -- INDICATOR CIRCLE (merah buat target)
+    -- INDICATOR CIRCLE
     local indicator = Instance.new("Frame")
     indicator.Name = "LockIndicator"
     indicator.Size = UDim2.new(0, 60, 0, 60)
-    indicator.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    indicator.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
     indicator.BackgroundTransparency = 0.7
     indicator.BorderSizePixel = 0
     indicator.Visible = false
@@ -492,14 +661,13 @@ local function CreateUI()
     indCorner.Parent = indicator
     
     local indStroke = Instance.new("UIStroke")
-    indStroke.Color = Color3.fromRGB(255, 0, 0)
+    indStroke.Color = Color3.fromRGB(0, 255, 0)
     indStroke.Thickness = 3
     indStroke.Transparency = 0.3
     indStroke.Parent = indicator
     
     indicator.Parent = container
     
-    -- UPDATE INDICATOR
     RunService.RenderStepped:Connect(function()
         if Settings.Enabled and CurrentTarget and TargetPart and TargetPart.Parent then
             indicator.Visible = true
@@ -517,7 +685,7 @@ local function CreateUI()
         end
     end)
     
-    return LockOnButton
+    return LockButton
 end
 
 -- HOOK NATIVE DASH
@@ -544,10 +712,9 @@ local function HookNativeDash()
         task.wait(0.5)
         local dashBtn = findDashButton(LocalPlayer.PlayerGui)
         if dashBtn then
-            local oldClick = dashBtn.MouseButton1Click
             dashBtn.MouseButton1Click:Connect(function()
                 if Settings.SideDashEnabled then
-                    task.spawn(function() SideDash180WithBlackFlash() end)
+                    task.spawn(function() SideDash180() end)
                 end
             end)
             break
@@ -583,11 +750,11 @@ spawn(function()
     wait(1)
     CreateUI()
     HookNativeDash()
-    print("✅ CENDOL HUB V2 - BLACK FLASH AFTER DASH READY!")
-    print("✅ DASH 180° + BLACK FLASH OTOMATIS!")
-    print("✅ Efek visual merah + partikel neon")
-    print("✅ Lock On + Indicator Circle")
-    print("✅ Bisa di drag pake mouse")
-    print("✅ COMBO: LOCK ON -> ENABLE DASH+BF -> DASH -> BLACK FLASH EXPLOSION!")
+    DetectEnemyAttack()
+    print("✅ CENDOL HUB V2 - FULL VERSION READY!")
+    print("✅ RANGE SLIDER: 5 - 500 STUDS!")
+    print("✅ Auto Block + Auto Counter + Dash 180°")
+    print("✅ Lock On + Indicator")
+    print("✅ Geser slider buat ngatur jarak lock-on!")
 end)
-]])
+]]
