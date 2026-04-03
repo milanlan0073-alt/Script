@@ -30,7 +30,7 @@ local Hitboxes = {"Head", "UpperTorso", "HumanoidRootPart", "Torso"}
 
 local NPCKeywords = {
     "Cursed", "Spirit", "Curse", "NPC", "Mob", "Enemy", "Boss",
-    "Raid", "Demon", "Shadow", "Monster"
+    "Raid", "Demon", "Shadow", "Monster","Dummy"
 }
 
 local function IsAlive(c)
