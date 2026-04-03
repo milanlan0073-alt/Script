@@ -1,3 +1,7 @@
+-- CENDOL HUB V2 - JUJUTSU SHENANIGANS EDITION
+-- Lock On Button + Side Dash 180°
+-- Tampilan tombul kaya di foto: bulat, border, status dot, teks di bawah
+
 loadstring([[
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -6,34 +10,29 @@ local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
--- ========== SETTINGS ==========
 local Settings = {
-    Enabled = true,
+    Enabled = false,
     LockPlayer = true,
     LockNPC = true,
-    CameraFollow = true,
     CameraSmoothness = 0.25,
     BodyRotate = true,
     MaxDistance = 200,
     CameraOffset = Vector3.new(0, 2, 0),
-    UIMinimized = false
+    SideDashEnabled = false
 }
 
 local CurrentTarget = nil
 local TargetPart = nil
-local Crosshair = nil
+local LockOnButton = nil
+local DashButton = nil
 
--- HITBOXES
 local Hitboxes = {"Head", "UpperTorso", "HumanoidRootPart", "Torso"}
 
--- NPC DETECTION
 local NPCKeywords = {
     "Cursed", "Spirit", "Curse", "NPC", "Mob", "Enemy", "Boss",
-    "Raid", "Demon", "Shadow", "Monster", "Training", "Dummy",
-    "Zombie", "Skeleton", "Goblin", "Orc", "Troll", "Dragon"
+    "Raid", "Demon", "Shadow", "Monster"
 }
 
--- ========== UTILITIES ==========
 local function IsAlive(c)
     if not c then return false end
     local h = c:FindFirstChild("Humanoid")
@@ -43,8 +42,8 @@ end
 local function IsNPC(character)
     if Players:GetPlayerFromCharacter(character) then return false end
     local name = character.Name:lower()
-    for _, keyword in ipairs(NPCKeywords) do
-        if name:find(keyword:lower()) then return true end
+    for _, kw in ipairs(NPCKeywords) do
+        if name:find(kw:lower()) then return true end
     end
     return character:FindFirstChild("Humanoid") ~= nil
 end
@@ -60,7 +59,10 @@ local function GetClosestTarget()
     if not myChar then return nil end
     local myPos = myChar:FindFirstChild("HumanoidRootPart")
     if not myPos then return nil end
-    
+
+    local players = {}
+    local npcs = {}
+
     if Settings.LockPlayer then
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= LocalPlayer then
@@ -68,33 +70,33 @@ local function GetClosestTarget()
                 if c and IsAlive(c) then
                     local r = c:FindFirstChild("HumanoidRootPart")
                     if r then
-                        local d = GetDistance(r, myPos)
-                        if d < closestDist then
-                            closestDist = d
-                            closest = c
-                        end
+                        table.insert(players, {char = c, dist = GetDistance(r, myPos)})
                     end
                 end
             end
         end
     end
-    
+
     if Settings.LockNPC then
         for _, obj in ipairs(workspace:GetDescendants()) do
             if obj:IsA("Model") and obj ~= myChar and IsNPC(obj) then
                 local h = obj:FindFirstChild("Humanoid")
                 local r = obj:FindFirstChild("HumanoidRootPart")
                 if h and r and h.Health > 0 then
-                    local d = GetDistance(r, myPos)
-                    if d < closestDist then
-                        closestDist = d
-                        closest = obj
-                    end
+                    table.insert(npcs, {char = obj, dist = GetDistance(r, myPos)})
                 end
             end
         end
     end
-    
+
+    table.sort(players, function(a,b) return a.dist < b.dist end)
+    table.sort(npcs, function(a,b) return a.dist < b.dist end)
+
+    if #players > 0 then
+        closest = players[1].char
+    elseif #npcs > 0 then
+        closest = npcs[1].char
+    end
     return closest
 end
 
@@ -111,563 +113,197 @@ end
 local function RotateToTarget()
     if not Settings.BodyRotate then return end
     if not CurrentTarget or not IsAlive(CurrentTarget) then return end
-    
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     local targetRoot = CurrentTarget:FindFirstChild("HumanoidRootPart")
     if not myRoot or not targetRoot then return end
-    
     local direction = (targetRoot.Position - myRoot.Position).Unit
     local lookAt = CFrame.new(myRoot.Position, myRoot.Position + direction)
     myChar:SetPrimaryPartCFrame(lookAt)
 end
 
-local function UpdateCameraFollow()
-    if not Settings.CameraFollow then return end
+local function SideDash180()
+    if not Settings.SideDashEnabled then return end
     if not CurrentTarget or not IsAlive(CurrentTarget) then return end
-    if not TargetPart or not TargetPart.Parent then return end
-    
-    local targetPos = TargetPart.Position + Settings.CameraOffset
-    local currentCFrame = Camera.CFrame
-    local desiredCFrame = CFrame.new(currentCFrame.Position, targetPos)
-    local newCFrame = currentCFrame:Lerp(desiredCFrame, Settings.CameraSmoothness)
-    Camera.CFrame = newCFrame
+    local myChar = LocalPlayer.Character
+    local humanoid = myChar and myChar:FindFirstChild("Humanoid")
+    local rootPart = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local targetRoot = CurrentTarget and CurrentTarget:FindFirstChild("HumanoidRootPart")
+    if not myChar or not humanoid or not rootPart or not targetRoot then return end
+    local toTarget = (targetRoot.Position - rootPart.Position).Unit
+    local dashDirection = -toTarget
+    local dashPosition = rootPart.Position + (dashDirection * 15)
+    local tween = TweenService:Create(rootPart, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {CFrame = CFrame.new(dashPosition, dashPosition + toTarget)})
+    tween:Play()
 end
 
--- ========== CROSSHAIR ==========
-local function CreateCrosshair()
+-- MEMBUAT TOMBOL BULAT KAYA DI FOTO
+local function CreateGameButtons()
     for i = 1, 10 do
         if LocalPlayer:FindFirstChild("PlayerGui") then break end
         wait(0.5)
     end
-    
     local sg = Instance.new("ScreenGui")
-    sg.Name = "CendolCrosshair"
+    sg.Name = "JujutsuLockOn"
     sg.Parent = LocalPlayer.PlayerGui
     sg.ResetOnSpawn = false
-    
-    local outer = Instance.new("Frame")
-    outer.Size = UDim2.new(0, 44, 0, 44)
-    outer.Position = UDim2.new(0.5, -22, 0.5, -22)
-    outer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    outer.BackgroundTransparency = 0.85
-    outer.BorderSizePixel = 0
-    outer.ZIndex = 10
-    
-    local outerCorner = Instance.new("UICorner")
-    outerCorner.CornerRadius = UDim.new(1, 0)
-    outerCorner.Parent = outer
-    
-    local inner = Instance.new("Frame")
-    inner.Size = UDim2.new(0, 24, 0, 24)
-    inner.Position = UDim2.new(0.5, -12, 0.5, -12)
-    inner.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-    inner.BackgroundTransparency = 0.4
-    inner.BorderSizePixel = 0
-    inner.ZIndex = 11
-    
-    local innerCorner = Instance.new("UICorner")
-    innerCorner.CornerRadius = UDim.new(1, 0)
-    innerCorner.Parent = inner
-    
-    local dot = Instance.new("Frame")
-    dot.Size = UDim2.new(0, 6, 0, 6)
-    dot.Position = UDim2.new(0.5, -3, 0.5, -3)
-    dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    dot.BorderSizePixel = 0
-    dot.ZIndex = 12
-    
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+    -- TOMBOL LOCK ON
+    LockOnButton = Instance.new("ImageButton")
+    LockOnButton.Size = UDim2.new(0, 70, 0, 70)
+    LockOnButton.Position = UDim2.new(1, -85, 1, -85)
+    LockOnButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    LockOnButton.BackgroundTransparency = 0.3
+    LockOnButton.BorderSizePixel = 0
+    LockOnButton.Image = "rbxassetid://3926305904"
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = LockOnButton
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(255, 80, 80)
+    stroke.Thickness = 2
+    stroke.Transparency = 0.5
+    stroke.Parent = LockOnButton
+
+    local btnText = Instance.new("TextLabel")
+    btnText.Size = UDim2.new(1, 0, 0, 20)
+    btnText.Position = UDim2.new(0, 0, 1, -25)
+    btnText.BackgroundTransparency = 1
+    btnText.Text = "LOCK"
+    btnText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btnText.TextScaled = true
+    btnText.Font = Enum.Font.GothamBold
+    btnText.Parent = LockOnButton
+
+    local statusDot = Instance.new("Frame")
+    statusDot.Size = UDim2.new(0, 12, 0, 12)
+    statusDot.Position = UDim2.new(0, 5, 0, 5)
+    statusDot.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    statusDot.BorderSizePixel = 0
     local dotCorner = Instance.new("UICorner")
     dotCorner.CornerRadius = UDim.new(1, 0)
-    dotCorner.Parent = dot
-    
-    local targetPanel = Instance.new("Frame")
-    targetPanel.Size = UDim2.new(0, 280, 0, 60)
-    targetPanel.Position = UDim2.new(0.5, -140, 0.5, 80)
-    targetPanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    targetPanel.BackgroundTransparency = 0.6
-    targetPanel.BorderSizePixel = 0
-    targetPanel.ZIndex = 10
-    
-    local panelCorner = Instance.new("UICorner")
-    panelCorner.CornerRadius = UDim.new(0, 12)
-    panelCorner.Parent = targetPanel
-    
-    local targetName = Instance.new("TextLabel")
-    targetName.Size = UDim2.new(1, 0, 0.5, 0)
-    targetName.Position = UDim2.new(0, 0, 0, 0)
-    targetName.BackgroundTransparency = 1
-    targetName.TextColor3 = Color3.fromRGB(255, 255, 255)
-    targetName.TextScaled = true
-    targetName.Font = Enum.Font.GothamBold
-    targetName.Text = ""
-    targetName.ZIndex = 11
-    targetName.Parent = targetPanel
-    
-    local targetDist = Instance.new("TextLabel")
-    targetDist.Size = UDim2.new(1, 0, 0.5, 0)
-    targetDist.Position = UDim2.new(0, 0, 0.5, 0)
-    targetDist.BackgroundTransparency = 1
-    targetDist.TextColor3 = Color3.fromRGB(200, 200, 200)
-    targetDist.TextScaled = true
-    targetDist.Font = Enum.Font.Gotham
-    targetDist.Text = ""
-    targetDist.ZIndex = 11
-    targetDist.Parent = targetPanel
-    
-    inner.Parent = outer
-    dot.Parent = inner
-    outer.Parent = sg
-    targetPanel.Parent = sg
-    
-    return {outer, inner, targetName, targetDist, targetPanel}
-end
+    dotCorner.Parent = statusDot
+    statusDot.Parent = LockOnButton
 
-local function UpdateCrosshair()
-    if not Crosshair then return end
-    local outer, inner, targetName, targetDist, targetPanel = unpack(Crosshair)
-    
-    if CurrentTarget and IsAlive(CurrentTarget) then
-        inner.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-        inner.BackgroundTransparency = 0.2
-        outer.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-        outer.BackgroundTransparency = 0.7
-        
-        local targetType = IsNPC(CurrentTarget) and "👹 NPC" or "👤 PLAYER"
-        local dist = TargetPart and math.floor((TargetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 0
-        local health = CurrentTarget:FindFirstChild("Humanoid") and math.floor(CurrentTarget.Humanoid.Health) or 0
-        
-        targetName.Text = targetType .. " | " .. (CurrentTarget.Name or "Target")
-        targetDist.Text = "📏 " .. dist .. "m | ❤️ " .. health .. " HP"
-        targetPanel.Visible = true
-    else
-        inner.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-        inner.BackgroundTransparency = 0.6
-        outer.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
-        outer.BackgroundTransparency = 0.85
-        targetPanel.Visible = false
-    end
-end
-
--- ========== ENHANCED UI ==========
--- LEBAR 500 TINGGI 400 FULL HITAM + CREDIT MICIII
-local function CreateUI()
-    for i = 1, 10 do
-        if LocalPlayer:FindFirstChild("PlayerGui") then break end
-        wait(0.5)
-    end
-    
-    local sg = Instance.new("ScreenGui")
-    sg.Name = "CendolHub"
-    sg.Parent = LocalPlayer.PlayerGui
-    sg.ResetOnSpawn = false
-    
-    -- MAIN PANEL (LEBAR 500 TINGGI 400)
-    local mainPanel = Instance.new("Frame")
-    mainPanel.Size = UDim2.new(0, 500, 0, 400)
-    mainPanel.Position = UDim2.new(0.5, -250, 0.3, 0)
-    mainPanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    mainPanel.BackgroundTransparency = 0.1
-    mainPanel.BorderSizePixel = 0
-    mainPanel.Visible = not Settings.UIMinimized
-    mainPanel.ZIndex = 5
-    
-    local panelCorner = Instance.new("UICorner")
-    panelCorner.CornerRadius = UDim.new(0, 16)
-    panelCorner.Parent = mainPanel
-    
-    -- GLOW EFFECT
-    local uiStroke = Instance.new("UIStroke")
-    uiStroke.Color = Color3.fromRGB(255, 80, 80)
-    uiStroke.Thickness = 2
-    uiStroke.Transparency = 0.5
-    uiStroke.Parent = mainPanel
-    
-    -- Title Bar
-    local titleBar = Instance.new("Frame")
-    titleBar.Size = UDim2.new(1, 0, 0, 50)
-    titleBar.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-    titleBar.BackgroundTransparency = 0.4
-    titleBar.BorderSizePixel = 0
-    
-    local titleCorner = Instance.new("UICorner")
-    titleCorner.CornerRadius = UDim.new(0, 16)
-    titleCorner.Parent = titleBar
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -50, 1, 0)
-    title.Position = UDim2.new(0, 15, 0, 0)
-    title.Text = "⚡ CENDOL HUB V2 | BY MICIII ⚡"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.BackgroundTransparency = 1
-    title.TextScaled = true
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Font = Enum.Font.GothamBold
-    title.Parent = titleBar
-    
-    -- CREDIT MICIII (DI TITLE BAR)
-    local creditLabel = Instance.new("TextLabel")
-    creditLabel.Size = UDim2.new(0, 150, 1, 0)
-    creditLabel.Position = UDim2.new(1, -160, 0, 0)
-    creditLabel.Text = "🎭 CREDIT: MICIII"
-    creditLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-    creditLabel.BackgroundTransparency = 1
-    creditLabel.TextScaled = true
-    creditLabel.Font = Enum.Font.GothamBold
-    creditLabel.Parent = titleBar
-    
-    -- Content
-    local content = Instance.new("Frame")
-    content.Size = UDim2.new(1, -30, 1, -70)
-    content.Position = UDim2.new(0, 15, 0, 60)
-    content.BackgroundTransparency = 1
-    
-    -- Lock ON/OFF (Big Button)
-    local lockBtn = Instance.new("TextButton")
-    lockBtn.Size = UDim2.new(1, 0, 0, 55)
-    lockBtn.Position = UDim2.new(0, 0, 0, 0)
-    lockBtn.BackgroundColor3 = Settings.Enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 50, 50)
-    lockBtn.Text = Settings.Enabled and "🔒 LOCK ACTIVE" or "🔓 LOCK OFF"
-    lockBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    lockBtn.TextScaled = true
-    lockBtn.Font = Enum.Font.GothamBold
-    lockBtn.BorderSizePixel = 0
-    
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 12)
-    btnCorner.Parent = lockBtn
-    
-    lockBtn.MouseButton1Click:Connect(function()
+    LockOnButton.MouseButton1Click:Connect(function()
         Settings.Enabled = not Settings.Enabled
-        lockBtn.Text = Settings.Enabled and "🔒 LOCK ACTIVE" or "🔓 LOCK OFF"
-        lockBtn.BackgroundColor3 = Settings.Enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 50, 50)
-        if not Settings.Enabled then
-            CurrentTarget = nil
-            TargetPart = nil
+        if Settings.Enabled then
+            local newTarget = GetClosestTarget()
+            if newTarget then
+                CurrentTarget = newTarget
+                TargetPart = GetBestHitbox(CurrentTarget)
+            end
+            statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            stroke.Color = Color3.fromRGB(0, 255, 0)
+            LockOnButton.BackgroundColor3 = Color3.fromRGB(0, 80, 0)
+            LockOnButton.BackgroundTransparency = 0.2
+            btnText.Text = "LOCKED"
         else
             CurrentTarget = nil
-        end
-        UpdateCrosshair()
-    end)
-    
-    -- Toggle Row (Player & NPC)
-    local toggleRow = Instance.new("Frame")
-    toggleRow.Size = UDim2.new(1, 0, 0, 50)
-    toggleRow.Position = UDim2.new(0, 0, 0, 65)
-    toggleRow.BackgroundTransparency = 1
-    
-    local playerBtn = Instance.new("TextButton")
-    playerBtn.Size = UDim2.new(0.48, 0, 1, 0)
-    playerBtn.Position = UDim2.new(0, 0, 0, 0)
-    playerBtn.BackgroundColor3 = Settings.LockPlayer and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
-    playerBtn.Text = "👤 PLAYER"
-    playerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    playerBtn.TextScaled = true
-    playerBtn.Font = Enum.Font.GothamBold
-    playerBtn.BorderSizePixel = 0
-    
-    local playerCorner = Instance.new("UICorner")
-    playerCorner.CornerRadius = UDim.new(0, 10)
-    playerCorner.Parent = playerBtn
-    
-    playerBtn.MouseButton1Click:Connect(function()
-        Settings.LockPlayer = not Settings.LockPlayer
-        playerBtn.BackgroundColor3 = Settings.LockPlayer and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
-        if Settings.Enabled then CurrentTarget = nil end
-    end)
-    
-    local npcBtn = Instance.new("TextButton")
-    npcBtn.Size = UDim2.new(0.48, 0, 1, 0)
-    npcBtn.Position = UDim2.new(0.52, 0, 0, 0)
-    npcBtn.BackgroundColor3 = Settings.LockNPC and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
-    npcBtn.Text = "👹 NPC"
-    npcBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    npcBtn.TextScaled = true
-    npcBtn.Font = Enum.Font.GothamBold
-    npcBtn.BorderSizePixel = 0
-    
-    local npcCorner = Instance.new("UICorner")
-    npcCorner.CornerRadius = UDim.new(0, 10)
-    npcCorner.Parent = npcBtn
-    
-    npcBtn.MouseButton1Click:Connect(function()
-        Settings.LockNPC = not Settings.LockNPC
-        npcBtn.BackgroundColor3 = Settings.LockNPC and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
-        if Settings.Enabled then CurrentTarget = nil end
-    end)
-    
-    playerBtn.Parent = toggleRow
-    npcBtn.Parent = toggleRow
-    
-    -- Body Rotate Toggle
-    local rotateBtn = Instance.new("TextButton")
-    rotateBtn.Size = UDim2.new(1, 0, 0, 50)
-    rotateBtn.Position = UDim2.new(0, 0, 0, 125)
-    rotateBtn.BackgroundColor3 = Settings.BodyRotate and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
-    rotateBtn.Text = Settings.BodyRotate and "🔄 BODY ROTATE: ON" or "🔄 BODY ROTATE: OFF"
-    rotateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    rotateBtn.TextScaled = true
-    rotateBtn.Font = Enum.Font.GothamBold
-    rotateBtn.BorderSizePixel = 0
-    
-    local rotateCorner = Instance.new("UICorner")
-    rotateCorner.CornerRadius = UDim.new(0, 12)
-    rotateCorner.Parent = rotateBtn
-    
-    rotateBtn.MouseButton1Click:Connect(function()
-        Settings.BodyRotate = not Settings.BodyRotate
-        rotateBtn.Text = Settings.BodyRotate and "🔄 BODY ROTATE: ON" or "🔄 BODY ROTATE: OFF"
-        rotateBtn.BackgroundColor3 = Settings.BodyRotate and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
-    end)
-    
-    -- Camera Follow Toggle
-    local cameraBtn = Instance.new("TextButton")
-    cameraBtn.Size = UDim2.new(1, 0, 0, 50)
-    cameraBtn.Position = UDim2.new(0, 0, 0, 185)
-    cameraBtn.BackgroundColor3 = Settings.CameraFollow and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
-    cameraBtn.Text = Settings.CameraFollow and "📷 CAMERA FOLLOW: ON" or "📷 CAMERA FOLLOW: OFF"
-    cameraBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    cameraBtn.TextScaled = true
-    cameraBtn.Font = Enum.Font.GothamBold
-    cameraBtn.BorderSizePixel = 0
-    
-    local cameraCorner = Instance.new("UICorner")
-    cameraCorner.CornerRadius = UDim.new(0, 12)
-    cameraCorner.Parent = cameraBtn
-    
-    cameraBtn.MouseButton1Click:Connect(function()
-        Settings.CameraFollow = not Settings.CameraFollow
-        cameraBtn.Text = Settings.CameraFollow and "📷 CAMERA FOLLOW: ON" or "📷 CAMERA FOLLOW: OFF"
-        cameraBtn.BackgroundColor3 = Settings.CameraFollow and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(80, 80, 80)
-    end)
-    
-    -- Target Info Panel
-    local targetInfo = Instance.new("Frame")
-    targetInfo.Size = UDim2.new(1, 0, 0, 60)
-    targetInfo.Position = UDim2.new(0, 0, 0, 245)
-    targetInfo.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    targetInfo.BackgroundTransparency = 0.5
-    targetInfo.BorderSizePixel = 0
-    
-    local targetInfoCorner = Instance.new("UICorner")
-    targetInfoCorner.CornerRadius = UDim.new(0, 12)
-    targetInfoCorner.Parent = targetInfo
-    
-    local targetLabel = Instance.new("TextLabel")
-    targetLabel.Size = UDim2.new(1, 0, 1, 0)
-    targetLabel.BackgroundTransparency = 1
-    targetLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-    targetLabel.TextScaled = true
-    targetLabel.Font = Enum.Font.GothamBold
-    targetLabel.Text = "🎯 No Target"
-    targetLabel.Parent = targetInfo
-    
-    -- BIG CREDIT FRAME DI BAWAH
-    local creditFrame = Instance.new("Frame")
-    creditFrame.Size = UDim2.new(1, 0, 0, 40)
-    creditFrame.Position = UDim2.new(0, 0, 0, 315)
-    creditFrame.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-    creditFrame.BackgroundTransparency = 0.3
-    creditFrame.BorderSizePixel = 0
-    
-    local creditFrameCorner = Instance.new("UICorner")
-    creditFrameCorner.CornerRadius = UDim.new(0, 10)
-    creditFrameCorner.Parent = creditFrame
-    
-    local bigCredit = Instance.new("TextLabel")
-    bigCredit.Size = UDim2.new(1, 0, 1, 0)
-    bigCredit.Text = "🔥 CREDIT: MICIII | MAKASIH UDAH PAKE CENDOL HUB 🔥"
-    bigCredit.TextColor3 = Color3.fromRGB(255, 255, 255)
-    bigCredit.BackgroundTransparency = 1
-    bigCredit.TextScaled = true
-    bigCredit.Font = Enum.Font.GothamBold
-    bigCredit.Parent = creditFrame
-    
-    -- Assemble
-    titleBar.Parent = mainPanel
-    content.Parent = mainPanel
-    lockBtn.Parent = content
-    toggleRow.Parent = content
-    rotateBtn.Parent = content
-    cameraBtn.Parent = content
-    targetInfo.Parent = content
-    creditFrame.Parent = mainPanel
-    
-    -- MINIMIZED BAR
-    local minimizedBar = Instance.new("Frame")
-    minimizedBar.Size = UDim2.new(0, 500, 0, 45)
-    minimizedBar.Position = UDim2.new(0.5, -250, 0.3, 0)
-    minimizedBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    minimizedBar.BackgroundTransparency = 0.2
-    minimizedBar.BorderSizePixel = 0
-    minimizedBar.Visible = Settings.UIMinimized
-    minimizedBar.ZIndex = 5
-    
-    local barCorner = Instance.new("UICorner")
-    barCorner.CornerRadius = UDim.new(0, 16)
-    barCorner.Parent = minimizedBar
-    
-    local barStroke = Instance.new("UIStroke")
-    barStroke.Color = Color3.fromRGB(255, 80, 80)
-    barStroke.Thickness = 2
-    barStroke.Transparency = 0.5
-    barStroke.Parent = minimizedBar
-    
-    local barTitle = Instance.new("TextLabel")
-    barTitle.Size = UDim2.new(1, -50, 1, 0)
-    barTitle.Position = UDim2.new(0, 15, 0, 0)
-    barTitle.Text = "⚡ CENDOL HUB V2 | BY MICIII ⚡"
-    barTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-    barTitle.BackgroundTransparency = 1
-    barTitle.TextScaled = true
-    barTitle.TextXAlignment = Enum.TextXAlignment.Left
-    barTitle.Font = Enum.Font.GothamBold
-    barTitle.Parent = minimizedBar
-    
-    local barStatus = Instance.new("TextLabel")
-    barStatus.Size = UDim2.new(0, 200, 1, 0)
-    barStatus.Position = UDim2.new(1, -220, 0, 0)
-    barStatus.Text = ""
-    barStatus.TextColor3 = Color3.fromRGB(0, 255, 0)
-    barStatus.BackgroundTransparency = 1
-    barStatus.TextScaled = true
-    barStatus.Font = Enum.Font.Gotham
-    barStatus.Parent = minimizedBar
-    
-    -- Update status di minimized bar
-    spawn(function()
-        while minimizedBar and minimizedBar.Parent do
-            if CurrentTarget and IsAlive(CurrentTarget) then
-                local targetType = IsNPC(CurrentTarget) and "👹" or "👤"
-                barStatus.Text = targetType .. " " .. (CurrentTarget.Name or "?")
-            else
-                barStatus.Text = Settings.Enabled and "🔍 LOCK" or "⏸ OFF"
-            end
-            task.wait(0.3)
+            TargetPart = nil
+            statusDot.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+            stroke.Color = Color3.fromRGB(255, 80, 80)
+            LockOnButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+            LockOnButton.BackgroundTransparency = 0.3
+            btnText.Text = "LOCK"
         end
     end)
-    
-    -- UPDATE TARGET INFO LOOP
-    spawn(function()
-        while targetInfo and targetInfo.Parent do
-            if CurrentTarget and IsAlive(CurrentTarget) then
-                local targetType = IsNPC(CurrentTarget) and "👹 NPC" or "👤 PLAYER"
-                local dist = TargetPart and math.floor((TargetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 0
-                local health = CurrentTarget:FindFirstChild("Humanoid") and math.floor(CurrentTarget.Humanoid.Health) or 0
-                targetLabel.Text = "🎯 " .. targetType .. " | " .. (CurrentTarget.Name or "Target") .. " | 📏 " .. dist .. "m | ❤️ " .. health
-                targetLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-            else
-                targetLabel.Text = "🎯 No Target Selected"
-                targetLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-            end
-            task.wait(0.2)
+
+    LockOnButton.Parent = sg
+
+    -- TOMBOL DASH (Side Dash toggle)
+    DashButton = Instance.new("ImageButton")
+    DashButton.Size = UDim2.new(0, 60, 0, 60)
+    DashButton.Position = UDim2.new(1, -85, 1, -170)
+    DashButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    DashButton.BackgroundTransparency = 0.3
+    DashButton.BorderSizePixel = 0
+    DashButton.Image = "rbxassetid://3926305904"
+
+    local dashCorner = Instance.new("UICorner")
+    dashCorner.CornerRadius = UDim.new(1, 0)
+    dashCorner.Parent = DashButton
+
+    local dashStroke = Instance.new("UIStroke")
+    dashStroke.Color = Color3.fromRGB(150, 150, 150)
+    dashStroke.Thickness = 2
+    dashStroke.Transparency = 0.5
+    dashStroke.Parent = DashButton
+
+    local dashText = Instance.new("TextLabel")
+    dashText.Size = UDim2.new(1, 0, 0, 18)
+    dashText.Position = UDim2.new(0, 0, 1, -22)
+    dashText.BackgroundTransparency = 1
+    dashText.Text = "DASH"
+    dashText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    dashText.TextScaled = true
+    dashText.Font = Enum.Font.GothamBold
+    dashText.Parent = DashButton
+
+    local dashDot = Instance.new("Frame")
+    dashDot.Size = UDim2.new(0, 10, 0, 10)
+    dashDot.Position = UDim2.new(0, 4, 0, 4)
+    dashDot.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+    dashDot.BorderSizePixel = 0
+    local dashDotCorner = Instance.new("UICorner")
+    dashDotCorner.CornerRadius = UDim.new(1, 0)
+    dashDotCorner.Parent = dashDot
+    dashDot.Parent = DashButton
+
+    DashButton.MouseButton1Click:Connect(function()
+        Settings.SideDashEnabled = not Settings.SideDashEnabled
+        if Settings.SideDashEnabled then
+            dashStroke.Color = Color3.fromRGB(0, 255, 0)
+            dashDot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            DashButton.BackgroundColor3 = Color3.fromRGB(0, 80, 0)
+            DashButton.BackgroundTransparency = 0.2
+        else
+            dashStroke.Color = Color3.fromRGB(150, 150, 150)
+            dashDot.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+            DashButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+            DashButton.BackgroundTransparency = 0.3
         end
     end)
-    
-    -- DRAG FUNCTION
-    local function MakeDraggable(frame)
-        local dragFrame = false
-        local dragStart, startPos
-        
-        frame.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragFrame = true
-                dragStart = input.Position
-                startPos = frame.Position
-            end
-        end)
-        
-        UserInputService.InputChanged:Connect(function(input)
-            if dragFrame and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
-                local delta = input.Position - dragStart
-                local newX = startPos.X.Offset + delta.X
-                local newY = startPos.Y.Offset + delta.Y
-                frame.Position = UDim2.new(startPos.X.Scale, newX, startPos.Y.Scale, newY)
-                mainPanel.Position = UDim2.new(startPos.X.Scale, newX, startPos.Y.Scale, newY)
-            end
-        end)
-        
-        UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragFrame = false
-            end
-        end)
-    end
-    
-    MakeDraggable(minimizedBar)
-    MakeDraggable(mainPanel)
-    
-    -- MINIMIZE/MAXIMIZE
-    local function MinimizeUI()
-        if Settings.UIMinimized then return end
-        Settings.UIMinimized = true
-        mainPanel.Visible = false
-        minimizedBar.Visible = true
-        minimizedBar.Position = mainPanel.Position
-    end
-    
-    local function MaximizeUI()
-        if not Settings.UIMinimized then return end
-        Settings.UIMinimized = false
-        mainPanel.Visible = true
-        minimizedBar.Visible = false
-        mainPanel.Position = minimizedBar.Position
-    end
-    
-    -- TOMBOL MINIMIZE DI MAIN PANEL
-    local minimizeBtn = Instance.new("TextButton")
-    minimizeBtn.Size = UDim2.new(0, 40, 0, 40)
-    minimizeBtn.Position = UDim2.new(1, -50, 0, 5)
-    minimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-    minimizeBtn.BackgroundTransparency = 0.5
-    minimizeBtn.Text = "−"
-    minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    minimizeBtn.TextScaled = true
-    minimizeBtn.Font = Enum.Font.GothamBold
-    minimizeBtn.BorderSizePixel = 0
-    minimizeBtn.ZIndex = 10
-    
-    local btnCornerMini = Instance.new("UICorner")
-    btnCornerMini.CornerRadius = UDim.new(1, 0)
-    btnCornerMini.Parent = minimizeBtn
-    
-    minimizeBtn.MouseButton1Click:Connect(function()
-        MinimizeUI()
-    end)
-    minimizeBtn.Parent = mainPanel
-    
-    -- TOMBOL MAXIMIZE DI MINIMIZED BAR
-    local maximizeBtn = Instance.new("TextButton")
-    maximizeBtn.Size = UDim2.new(0, 40, 0, 40)
-    maximizeBtn.Position = UDim2.new(1, -50, 0, 3)
-    maximizeBtn.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
-    maximizeBtn.BackgroundTransparency = 0.5
-    maximizeBtn.Text = "+"
-    maximizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    maximizeBtn.TextScaled = true
-    maximizeBtn.Font = Enum.Font.GothamBold
-    maximizeBtn.BorderSizePixel = 0
-    maximizeBtn.ZIndex = 10
-    
-    local btnCornerMax = Instance.new("UICorner")
-    btnCornerMax.CornerRadius = UDim.new(1, 0)
-    btnCornerMax.Parent = maximizeBtn
-    
-    maximizeBtn.MouseButton1Click:Connect(function()
-        MaximizeUI()
-    end)
-    maximizeBtn.Parent = minimizedBar
-    
-    mainPanel.Parent = sg
-    minimizedBar.Parent = sg
-    
-    return {MinimizeUI, MaximizeUI}
+
+    DashButton.Parent = sg
 end
 
--- ========== MAIN LOOP ==========
+-- HOOK DASH ASLI (JIKA ADA)
+local function HookNativeDash()
+    task.wait(2)
+    local function findButton(parent)
+        if not parent then return nil end
+        for _, child in ipairs(parent:GetChildren()) do
+            if child:IsA("ImageButton") or child:IsA("TextButton") then
+                if string.lower(child.Name or ""):find("dash") or (child.Text and string.lower(child.Text):find("dash")) then
+                    return child
+                end
+            end
+            local found = findButton(child)
+            if found then return found end
+        end
+        return nil
+    end
+    local dashBtn = findButton(LocalPlayer.PlayerGui)
+    if dashBtn then
+        dashBtn.MouseButton1Click:Connect(function()
+            if Settings.SideDashEnabled then SideDash180() end
+        end)
+    else
+        if DashButton then
+            DashButton.MouseButton1Click:Connect(function()
+                if Settings.SideDashEnabled then SideDash180() end
+            end)
+        end
+    end
+end
+
+-- MAIN LOOP CAMERA & ROTASI
 RunService.RenderStepped:Connect(function()
     if not LocalPlayer.Character then return end
-    
     if Settings.Enabled then
         if not CurrentTarget or not IsAlive(CurrentTarget) then
             local newTarget = GetClosestTarget()
@@ -676,26 +312,20 @@ RunService.RenderStepped:Connect(function()
                 TargetPart = GetBestHitbox(CurrentTarget)
             end
         end
-        
-        if CurrentTarget and not IsAlive(CurrentTarget) then
-            CurrentTarget = nil
-            TargetPart = nil
+        if CurrentTarget and TargetPart and TargetPart.Parent then
+            local targetPos = TargetPart.Position + Settings.CameraOffset
+            local currentCFrame = Camera.CFrame
+            local desiredCFrame = CFrame.new(currentCFrame.Position, targetPos)
+            Camera.CFrame = currentCFrame:Lerp(desiredCFrame, Settings.CameraSmoothness)
         end
-        
-        UpdateCameraFollow()
         RotateToTarget()
     end
-    
-    UpdateCrosshair()
 end)
 
--- INIT
 spawn(function()
     wait(1)
-    Crosshair = CreateCrosshair()
-    CreateUI()
-    print("=== CENDOL HUB V2 LOADED ===")
-    print("=== UI SIZE: 500x400 FULL BLACK ===")
-    print("=== CREDIT: MICIII ===")
+    CreateGameButtons()
+    HookNativeDash()
+    print("✅ Lock On + Side Dash 180° siap dipake")
 end)
 ]])()
