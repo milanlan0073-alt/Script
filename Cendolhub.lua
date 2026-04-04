@@ -1,4 +1,4 @@
--- CENDOL HUB V3 - GUI EDITION (by Architect 03)
+-- CENDOL HUB V3 - GUI EDITION (WITH MAXIMIZE BUTTON)
 -- Full GUI | Lock On | Camera Follow | Body Rotate | Side Dash 180°
 
 loadstring([[
@@ -23,6 +23,9 @@ local Settings = {
 local CurrentTarget = nil
 local DashCooldown = false
 local MainGui = nil
+local isMaximized = false
+local savedPosition = nil
+local savedSize = nil
 
 -- ========== UTILITIES ==========
 local function IsAlive(c)
@@ -143,6 +146,7 @@ local function CreateGUI()
     end
     
     local playerGui = LocalPlayer.PlayerGui
+    local viewportSize = Camera.ViewportSize
     
     -- ScreenGui utama
     MainGui = Instance.new("ScreenGui")
@@ -153,13 +157,16 @@ local function CreateGUI()
     
     -- Main Frame
     local mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 280, 0, 380)
+    mainFrame.Size = UDim2.new(0, 280, 0, 420)
     mainFrame.Position = UDim2.new(0, 15, 0, 100)
     mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
     mainFrame.BackgroundTransparency = 0.15
     mainFrame.BorderSizePixel = 0
     mainFrame.ClipsDescendants = true
     mainFrame.Parent = MainGui
+    
+    savedSize = mainFrame.Size
+    savedPosition = mainFrame.Position
     
     local frameCorner = Instance.new("UICorner")
     frameCorner.CornerRadius = UDim.new(0, 12)
@@ -184,7 +191,7 @@ local function CreateGUI()
     titleCorner.Parent = titleBar
     
     local titleText = Instance.new("TextLabel")
-    titleText.Size = UDim2.new(1, -40, 1, 0)
+    titleText.Size = UDim2.new(1, -100, 1, 0)
     titleText.Position = UDim2.new(0, 15, 0, 0)
     titleText.Text = "⚡ CENDOL HUB V3"
     titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -197,7 +204,7 @@ local function CreateGUI()
     -- Minimize Button
     local minBtn = Instance.new("TextButton")
     minBtn.Size = UDim2.new(0, 30, 0, 30)
-    minBtn.Position = UDim2.new(1, -40, 0, 5)
+    minBtn.Position = UDim2.new(1, -95, 0, 5)
     minBtn.Text = "−"
     minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     minBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
@@ -211,6 +218,23 @@ local function CreateGUI()
     minCorner.CornerRadius = UDim.new(1, 0)
     minCorner.Parent = minBtn
     
+    -- Maximize/Restore Button
+    local maxBtn = Instance.new("TextButton")
+    maxBtn.Size = UDim2.new(0, 30, 0, 30)
+    maxBtn.Position = UDim2.new(1, -55, 0, 5)
+    maxBtn.Text = "□"
+    maxBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    maxBtn.BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+    maxBtn.BackgroundTransparency = 0.5
+    maxBtn.TextScaled = true
+    maxBtn.Font = Enum.Font.GothamBold
+    maxBtn.BorderSizePixel = 0
+    maxBtn.Parent = titleBar
+    
+    local maxCorner = Instance.new("UICorner")
+    maxCorner.CornerRadius = UDim.new(1, 0)
+    maxCorner.Parent = maxBtn
+    
     -- Content Frame
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1, -20, 1, -60)
@@ -218,7 +242,7 @@ local function CreateGUI()
     content.BackgroundTransparency = 1
     content.Parent = mainFrame
     
-    -- Lock Toggle (besar)
+    -- Lock Toggle
     local lockToggle = Instance.new("TextButton")
     lockToggle.Size = UDim2.new(1, 0, 0, 50)
     lockToggle.Position = UDim2.new(0, 0, 0, 0)
@@ -431,15 +455,55 @@ local function CreateGUI()
         end
     end)
     
-    -- Minimize functionality
+    -- MINIMIZE FUNCTION
     local minimized = false
     minBtn.MouseButton1Click:Connect(function()
         minimized = not minimized
-        mainFrame.Visible = not minimized
         if minimized then
+            mainFrame:TweenSize(UDim2.new(0, 280, 0, 50), "Out", "Quad", 0.3, true)
+            content.Visible = false
             minBtn.Text = "+"
+            maxBtn.Visible = false
         else
+            if isMaximized then
+                mainFrame:TweenSize(UDim2.new(1, 0, 1, -50), "Out", "Quad", 0.3, true)
+            else
+                mainFrame:TweenSize(savedSize, "Out", "Quad", 0.3, true)
+            end
+            content.Visible = true
             minBtn.Text = "−"
+            maxBtn.Visible = true
+        end
+    end)
+    
+    -- MAXIMIZE FUNCTION
+    maxBtn.MouseButton1Click:Connect(function()
+        if not minimized then
+            isMaximized = not isMaximized
+            
+            if isMaximized then
+                -- Save current state before maximizing
+                savedSize = mainFrame.Size
+                savedPosition = mainFrame.Position
+                
+                -- Maximize to full screen
+                mainFrame.Size = UDim2.new(1, -20, 1, -50)
+                mainFrame.Position = UDim2.new(0, 10, 0, 25)
+                maxBtn.Text = "☐"
+                maxBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+                
+                -- Update content size
+                content.Size = UDim2.new(1, -20, 1, -60)
+            else
+                -- Restore to saved size
+                mainFrame.Size = savedSize
+                mainFrame.Position = savedPosition
+                maxBtn.Text = "□"
+                maxBtn.BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+                
+                -- Reset content size
+                content.Size = UDim2.new(1, -20, 1, -60)
+            end
         end
     end)
     
@@ -447,9 +511,11 @@ local function CreateGUI()
     local dragStart, startPos, draggingFrame = nil
     titleBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            draggingFrame = true
-            dragStart = input.Position
-            startPos = mainFrame.Position
+            if not isMaximized then
+                draggingFrame = true
+                dragStart = input.Position
+                startPos = mainFrame.Position
+            end
         end
     end)
     
@@ -463,6 +529,9 @@ local function CreateGUI()
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             draggingFrame = false
+            if not isMaximized then
+                savedPosition = mainFrame.Position
+            end
         end
     end)
 end
@@ -499,6 +568,7 @@ spawn(function()
     task.wait(1)
     CreateGUI()
     print("=== CENDOL HUB V3 GUI LOADED ===")
+    print("=== − Minimize | □ Maximize | ☐ Restore ===")
     print("=== Drag title bar buat mindahin GUI ===")
     print("=== Tekan F/Q/Shift buat side dash ===")
 end)
